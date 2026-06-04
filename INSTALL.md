@@ -102,13 +102,15 @@ run_gui.bat
 
 Or directly:
 ```bash
-python dan_gui.py
+python Dan.py --doctor --target gui
+python dan_gui_modern.py
 ```
 
 #### CLI Mode (Classic REPL)
 
 ```bash
-python dan.py
+python Dan.py --doctor --target cli
+python Dan.py
 ```
 
 ---
@@ -139,6 +141,7 @@ Check that:
 1. Your API key is set correctly
 2. The environment variable name matches your provider
 3. Your API key is valid (not expired or revoked)
+4. The provider SDK is installed for the provider you selected
 
 ### "tkinter not found" (Linux only)
 
@@ -164,6 +167,26 @@ Try:
 ### Can't install dependencies on Windows
 
 Make sure you're running Command Prompt or PowerShell as Administrator.
+
+### Quick environment audit
+
+Run:
+
+```bash
+py -3 Dan.py --doctor --target cli
+```
+
+This reports true startup blockers separately from development advisories before launch.
+
+### Full repo health audit
+
+Run:
+
+```bash
+py -3 scripts/repo_health.py
+```
+
+This combines the environment audit with `compileall`, `pytest` when available, and `ruff` when available.
 
 ---
 
@@ -217,4 +240,4 @@ pip uninstall customtkinter anthropic httpx aiofiles
 
 ---
 
-**Ready to go? Run `python dan_gui.py` and start coding!**
+**Ready to go? Run `python dan_gui_modern.py` and start coding!**

@@ -27,6 +27,8 @@ from code_tools import register_code_tools
 from git_tools import register_git_tools
 from project_tools import register_project_tools
 from code_execution import register_execution_tools
+from codebase_index import register_index_tools
+from code_tools import startup_blocked, startup_doctor
 import project_context
 import cost_tracker
 import session_mgr
@@ -172,6 +174,7 @@ def init_tools() -> int:
     register_git_tools()
     register_project_tools()
     register_execution_tools()
+    register_index_tools()
 
     try:
         import image_tools  # auto-registers on import
@@ -635,6 +638,10 @@ def main():
                         help="Print mode (one-shot, no REPL)")
     parser.add_argument("--provider", default=None, help="LLM provider (anthropic/openai/ollama)")
     parser.add_argument("--model", default=None, help="Model name")
+    parser.add_argument("--doctor", action="store_true",
+                        help="Run startup diagnostics for the selected target and exit")
+    parser.add_argument("--target", default="cli", choices=("cli", "gui"),
+                        help="Startup target to validate with --doctor")
     parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
 
     args = parser.parse_args()
@@ -644,13 +651,20 @@ def main():
         logger.setLevel(logging.DEBUG)
 
     # Determine provider
-    provider_name = args.provider or os.environ.get("DAN_PROVIDER", "anthropic")
-    model = args.model or os.environ.get("DAN_MODEL", "claude-sonnet-4-6")
+    provider_name = args.provider or os.environ.get("DAN_PROVIDER", DEFAULT_PROVIDER)
+    model = args.model or os.environ.get("DAN_MODEL", DEFAULT_MODEL)
+
+    if args.doctor:
+        report = startup_doctor(".", provider=provider_name, target=args.target)
+        print(report)
+        sys.exit(1 if startup_blocked(".", provider=provider_name, target=args.target) else 0)
 
     try:
         provider = get_provider(provider_name, model)
     except (ValueError, ImportError) as e:
         print(f"{Colors.RED}Error: {e}{Colors.RESET}")
+        print()
+        print(startup_doctor(".", provider=provider_name, target="cli"))
         sys.exit(1)
 
     actual_model = getattr(provider, 'model', model)

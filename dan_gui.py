@@ -12,9 +12,9 @@ import logging
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog
+from gui_compat import ctk, ensure_gui_runtime
 
 from config import APP_NAME, APP_VERSION, USER_DATA_DIR
 from dan_gui_components import (
@@ -968,6 +968,7 @@ class DanGUI(ctk.CTk):
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
+    ensure_gui_runtime()
     app = DanGUI()
     app.mainloop()
     get_pool().shutdown()

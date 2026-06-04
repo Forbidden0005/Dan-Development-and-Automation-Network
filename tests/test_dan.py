@@ -360,6 +360,15 @@ class TestAgent:
         assert "actions" in categories
         assert "web" in categories
 
+    def test_select_tool_categories_picks_index_for_codebase_queries(self):
+        from agent import select_tool_categories
+
+        categories = select_tool_categories("where is helper defined and who imports it")
+
+        assert "core" in categories
+        assert "actions" in categories
+        assert "index" in categories
+
     def test_extract_text_tool_call_rescues_valid_json(self, monkeypatch):
         import agent
 
@@ -1135,6 +1144,7 @@ class TestCodeExecutionBundle:
         import code_execution
 
         monkeypatch.setattr(code_execution, "_path_validator", code_execution.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(code_execution.shutil, "which", lambda name: None if name == "python" else "C:/Windows/py.exe")
 
         assert code_execution._detect_lang_from_ext(Path("demo.py")) == "python"
         assert code_execution._detect_lang_from_shebang("#!/usr/bin/env python\nprint('x')") == "python"
@@ -1142,6 +1152,8 @@ class TestCodeExecutionBundle:
         assert code_execution._split_args("--flag value") == ["--flag", "value"]
         assert code_execution._command_to_string(["python", "demo.py"])
         assert code_execution._safe_path(str(tmp_path / "ok.txt")) == (tmp_path / "ok.txt").resolve()
+        assert code_execution._resolve_python_command() == ["py"]
+        assert code_execution._resolve_interpreter_command(["python", "-m", "pytest"]) == ["py", "-m", "pytest"]
 
     def test_run_code_and_run_file_paths(self, monkeypatch, tmp_path):
         import code_execution
@@ -1202,9 +1214,10 @@ class TestCodeToolsBundle:
         root = tmp_path / "proj"
         root.mkdir()
         (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+        monkeypatch.setattr(code_tools.shutil, "which", lambda name: None if name == "python" else "C:/Windows/py.exe")
 
         def fake_run(cmd, cwd=None, timeout=120):
-            if cmd[:3] == ["python", "-m", "pytest"]:
+            if cmd[:3] == ["py", "-m", "pytest"]:
                 return 0, "2 passed", ""
             if cmd[:2] == ["ruff", "check"]:
                 return 0, "", ""
@@ -1232,7 +1245,17 @@ class TestCodeToolsBundle:
             "import os\n\n# TODO: fix\n\ndef demo():\n    pass\n\nx = demo()\n",
             encoding="utf-8",
         )
-        (root / "requirements.txt").write_text("requests>=2\nmissing_pkg\n", encoding="utf-8")
+        (root / "requirements.txt").write_text("-r requirements-core.txt\nrequests>=2\n", encoding="utf-8")
+        (root / "requirements-core.txt").write_text("missing_pkg\n", encoding="utf-8")
+        (root / "pyproject.toml").write_text(
+            "[project]\n"
+            "dependencies = [\n"
+            "  \"tomli>=2\",\n"
+            "]\n"
+            "[tool.pytest.ini_options]\n"
+            "testpaths = [\"tests\"]\n",
+            encoding="utf-8",
+        )
 
         usages = code_tools.find_usages("demo", str(root), "python")
         dry_run = code_tools.refactor_rename("demo", "renamed", str(root), dry_run=True)
@@ -1248,6 +1271,95 @@ class TestCodeToolsBundle:
         assert "DRY RUN" in dry_run
         assert "Code Analysis" in analysis
         assert "Missing packages" in deps
+        assert "missing_pkg" in deps
+        assert "tomli" in deps
+        assert "testpaths" not in deps
+        assert "x  missing_pkg" in deps
+        deps.encode("cp1252")
+
+    def test_environment_doctor_reports_bootstrap_issues(self, tmp_path, monkeypatch):
+        import code_tools
+
+        root = tmp_path / "proj"
+        root.mkdir()
+        (root / "tests").mkdir()
+        (root / "requirements.txt").write_text("-r requirements-core.txt\n", encoding="utf-8")
+        (root / "requirements-core.txt").write_text("httpx\nanthropic\n", encoding="utf-8")
+
+        monkeypatch.setattr(code_tools.shutil, "which", lambda name: "C:/Windows/py.exe" if name == "py" else None)
+        monkeypatch.setattr(
+            code_tools.importlib.util,
+            "find_spec",
+            lambda name: object() if name == "httpx" else None,
+        )
+
+        doctor = code_tools.environment_doctor(str(root), provider="anthropic")
+
+        assert "Environment Doctor" in doctor
+        assert "Pytest is not installed" in doctor
+        assert "Runtime dependencies are missing: anthropic" in doctor
+        assert "Dev missing:           0" in doctor
+        assert "Provider 'anthropic' is missing required SDK(s): anthropic." in doctor
+        assert "Missing runtime packages:" in doctor
+        assert "anthropic  (requirements-core.txt)" in doctor
+        assert "Suggested runtime fix:" in doctor
+        assert "py -m pip install anthropic" in doctor
+        assert "Install test tooling: py -m pip install pytest pytest-cov" in doctor
+
+    def test_repo_health_combines_doctor_compile_and_optional_checks(self, tmp_path, monkeypatch):
+        import code_tools
+
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "demo.py").write_text("print('ok')\n", encoding="utf-8")
+        monkeypatch.setattr(code_tools, "environment_doctor", lambda path, provider="": "doctor-ok")
+
+        def fake_find_spec(name):
+            if name in {"pytest", "ruff"}:
+                return object()
+            return None
+
+        monkeypatch.setattr(code_tools.importlib.util, "find_spec", fake_find_spec)
+        monkeypatch.setattr(code_tools, "run_tests", lambda path, framework="", args="", timeout=60: "tests-ok")
+        monkeypatch.setattr(code_tools, "lint_check", lambda path, tool="", fix=False: "lint-ok")
+
+        report = code_tools.repo_health(str(tmp_path), provider="ollama", timeout=45)
+
+        assert "Repo Health" in report
+        assert "doctor-ok" in report
+        assert "OK compileall passed." in report
+        assert "tests-ok" in report
+        assert "lint-ok" in report
+
+    def test_check_deps_maps_non_importable_package_names(self, tmp_path, monkeypatch):
+        import code_tools
+
+        (tmp_path / "requirements.txt").write_text(
+            "pytest-cov\nscikit-learn\nopencv-python\n",
+            encoding="utf-8",
+        )
+
+        def fake_find_spec(name):
+            if name in {"pytest_cov", "sklearn", "cv2"}:
+                return object()
+            return None
+
+        monkeypatch.setattr(code_tools.importlib.util, "find_spec", fake_find_spec)
+
+        report = code_tools.check_deps(str(tmp_path))
+
+        assert "Missing:   0" in report
+        assert "Undeclared imports: 0" in report
+    
+    def test_check_deps_uses_resolved_python_launcher_for_install_hint(self, tmp_path, monkeypatch):
+        import code_tools
+
+        (tmp_path / "requirements.txt").write_text("httpx\n", encoding="utf-8")
+        monkeypatch.setattr(code_tools, "_python_cmd", lambda: ["py"])
+        monkeypatch.setattr(code_tools.importlib.util, "find_spec", lambda name: None)
+
+        report = code_tools.check_deps(str(tmp_path))
+
+        assert "Install with: py -m pip install httpx" in report
 
     def test_register_code_tools_registers_expected_names(self, monkeypatch):
         import code_tools
@@ -1257,7 +1369,42 @@ class TestCodeToolsBundle:
 
         code_tools.register_code_tools()
 
-        assert {"RunTests", "LintCheck", "FormatCode", "FindUsages", "RefactorRename", "AnalyzeCode", "CheckDeps"}.issubset(set(registered))
+        assert {"RunTests", "LintCheck", "FormatCode", "FindUsages", "RefactorRename", "AnalyzeCode", "CheckDeps", "EnvironmentDoctor", "StartupDoctor", "RepoHealth"}.issubset(set(registered))
+
+
+class TestCliBootstrap:
+    def test_main_uses_config_defaults_for_provider_and_model(self, monkeypatch):
+        import Dan
+
+        captured = {}
+
+        class Args:
+            prompt = None
+            print_mode = False
+            provider = None
+            model = None
+            verbose = False
+
+        monkeypatch.setattr(Dan.argparse.ArgumentParser, "parse_args", lambda self: Args())
+        monkeypatch.setattr(Dan, "repl", lambda provider, model, provider_name: captured.update({
+            "provider": provider_name,
+            "model": model,
+            "provider_model": getattr(provider, "model", ""),
+        }))
+        monkeypatch.setattr(Dan, "one_shot", lambda prompt, provider: None)
+        monkeypatch.setattr(
+            Dan,
+            "get_provider",
+            lambda provider_name, model: type("Provider", (), {"model": model})(),
+        )
+        monkeypatch.delenv("DAN_PROVIDER", raising=False)
+        monkeypatch.delenv("DAN_MODEL", raising=False)
+
+        Dan.main()
+
+        assert captured["provider"] == Dan.DEFAULT_PROVIDER
+        assert captured["model"] == Dan.DEFAULT_MODEL
+        assert captured["provider_model"] == Dan.DEFAULT_MODEL
 
 
 class TestGitToolsBundle:
@@ -2026,6 +2173,26 @@ class TestCodebaseIndexBundle:
         assert {"IndexProject", "SymbolLookup", "FindUsages", "DependencyGraph", "SemanticSearch", "EmbedProject"}.issubset(set(registered))
 
 
+class TestCodeToolsDependencyAudit:
+    def test_check_deps_reports_undeclared_imports(self, tmp_path):
+        import code_tools
+
+        (tmp_path / "requirements-core.txt").write_text("Pillow>=10.0.0\n", encoding="utf-8")
+        (tmp_path / "requirements.txt").write_text("-r requirements-core.txt\n", encoding="utf-8")
+        (tmp_path / "image_feature.py").write_text(
+            "from PIL import Image\nimport openai\n",
+            encoding="utf-8",
+        )
+
+        report = code_tools.check_deps(str(tmp_path))
+        doctor = code_tools.environment_doctor(str(tmp_path), provider="openai")
+
+        assert "Undeclared imports: 1" in report
+        assert "openai" in report
+        assert "Pillow" not in report.split("Imported but undeclared packages:")[-1]
+        assert "Imported packages are not declared in requirements: openai" in doctor
+
+
 class TestSecureToolsExpanded:
     def test_secure_read_write_edit_and_async_paths(self, monkeypatch, tmp_path):
         import tools_secure
@@ -2294,6 +2461,72 @@ class TestDanGuiComponentsExpanded:
         assert ("tool line\n", "tool") in inserted
         assert ("hello", "normal") in inserted
         assert "tool output" in lifted or "hello" in lifted
+
+
+class TestDanGuiModern:
+    def test_modern_gui_module_exports_shell(self):
+        import dan_gui
+        import dan_gui_modern
+
+        assert issubclass(dan_gui_modern.DanModernGUI, dan_gui.DanGUI)
+        assert callable(dan_gui_modern.main)
+
+
+class TestGuiCompat:
+    def test_gui_dependency_message_is_actionable(self, monkeypatch):
+        import gui_compat
+
+        monkeypatch.setattr(gui_compat, "CUSTOMTKINTER_AVAILABLE", False)
+        monkeypatch.setattr(
+            gui_compat,
+            "CUSTOMTKINTER_IMPORT_ERROR",
+            ModuleNotFoundError("No module named 'customtkinter'"),
+        )
+
+        message = gui_compat.gui_dependency_message()
+
+        assert "Dan GUI cannot start" in message
+        assert "requirements-core.txt" in message
+
+    def test_ensure_gui_runtime_raises_clear_error(self, monkeypatch):
+        import gui_compat
+
+        monkeypatch.setattr(gui_compat, "CUSTOMTKINTER_AVAILABLE", False)
+        monkeypatch.setattr(
+            gui_compat,
+            "CUSTOMTKINTER_IMPORT_ERROR",
+            ModuleNotFoundError("No module named 'customtkinter'"),
+        )
+
+        with pytest.raises(RuntimeError, match="Dan GUI cannot start"):
+            gui_compat.ensure_gui_runtime()
+
+
+class TestDanBootstrap:
+    def test_init_tools_registers_index_bundle(self, monkeypatch):
+        import Dan
+
+        calls = []
+        monkeypatch.setattr(Dan, "register_core_tools", lambda: calls.append("core"))
+        monkeypatch.setattr(Dan, "register_knowledge_tools", lambda: calls.append("knowledge"))
+        monkeypatch.setattr(Dan, "register_web_tools", lambda: calls.append("web"))
+        monkeypatch.setattr(Dan, "register_worker_tools", lambda: calls.append("workers"))
+        monkeypatch.setattr(Dan, "register_action_tools", lambda: calls.append("actions"))
+        monkeypatch.setattr(Dan, "register_skill_tools", lambda: calls.append("skills"))
+        monkeypatch.setattr(Dan, "register_code_tools", lambda: calls.append("code"))
+        monkeypatch.setattr(Dan, "register_git_tools", lambda: calls.append("git"))
+        monkeypatch.setattr(Dan, "register_project_tools", lambda: calls.append("project"))
+        monkeypatch.setattr(Dan, "register_execution_tools", lambda: calls.append("execution"))
+        monkeypatch.setattr(Dan, "register_index_tools", lambda: calls.append("index"))
+        monkeypatch.setitem(sys.modules, "image_tools", type("ImageTools", (), {})())
+        monkeypatch.setitem(sys.modules, "ml_tools", type("MlTools", (), {})())
+
+        import tool_registry as registry
+        monkeypatch.setattr(registry, "get_all_tools", lambda: [])
+
+        Dan.init_tools()
+
+        assert "index" in calls
 
 
 if __name__ == "__main__":

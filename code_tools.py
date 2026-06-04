@@ -1,11 +1,15 @@
-"""Coding intelligence tools — test runner, linter, formatter, symbol analysis."""
+"""Coding intelligence tools - test runner, linter, formatter, symbol analysis."""
 
 import ast
-import json
+import importlib.util
 import logging
 import os
+import py_compile
 import re
+import shutil
 import subprocess
+import sys
+import tomllib
 from pathlib import Path
 
 import tool_registry as registry
@@ -14,6 +18,67 @@ logger = logging.getLogger(__name__)
 
 _SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
               ".tox", "dist", "build", ".mypy_cache", ".pytest_cache"}
+_PYTHON_CANDIDATES = ("python", "py")
+_DEV_REQUIREMENT_SOURCES = {"requirements-dev.txt"}
+_OPTIONAL_REQUIREMENT_SOURCES = {"requirements-ml.txt", "requirements-vision.txt"}
+_PROVIDER_RUNTIME_REQUIREMENTS = {
+    "anthropic": ["anthropic"],
+    "openai": ["openai"],
+    "venice": ["openai"],
+    "ollama": ["httpx"],
+}
+_STARTUP_TARGET_IMPORTS = {
+    "cli": [],
+    "gui": ["customtkinter", "tkinter"],
+}
+_STARTUP_TARGET_PACKAGES = {
+    "cli": [],
+    "gui": ["customtkinter"],
+}
+_PROVIDER_KEY_HINTS = {
+    "anthropic": (
+        ("ANTHROPIC_API_KEY", "export ANTHROPIC_API_KEY=..."),
+        ("ANTHROPIC_API_KEY_1", "export ANTHROPIC_API_KEY_1=..."),
+    ),
+    "openai": (
+        ("OPENAI_API_KEY", "export OPENAI_API_KEY=..."),
+    ),
+    "venice": (
+        ("VENICE_API_KEY", "export VENICE_API_KEY=..."),
+    ),
+}
+_IMPORT_TO_PACKAGE = {
+    "PIL": "Pillow",
+    "cv2": "opencv-python",
+    "sklearn": "scikit-learn",
+}
+_PACKAGE_TO_IMPORTS = {
+    "aiofiles": ("aiofiles",),
+    "anthropic": ("anthropic",),
+    "black": ("black",),
+    "customtkinter": ("customtkinter",),
+    "ddgs": ("ddgs",),
+    "detect-secrets": ("detect_secrets",),
+    "easyocr": ("easyocr",),
+    "httpx": ("httpx",),
+    "joblib": ("joblib",),
+    "lightgbm": ("lightgbm",),
+    "mypy": ("mypy",),
+    "numpy": ("numpy",),
+    "opencv-python": ("cv2",),
+    "openai": ("openai",),
+    "pandas": ("pandas",),
+    "Pillow": ("PIL",),
+    "pre-commit": ("pre_commit",),
+    "pytest": ("pytest",),
+    "pytest-cov": ("pytest_cov",),
+    "pytesseract": ("pytesseract",),
+    "ruff": ("ruff",),
+    "scikit-learn": ("sklearn",),
+    "tensorflow": ("tensorflow",),
+    "torch": ("torch",),
+    "xgboost": ("xgboost",),
+}
 
 
 # ── Subprocess helper ─────────────────────────────────────────────────────────
@@ -35,6 +100,633 @@ def _run(cmd: list[str], cwd: str | None = None,
         return 1, "", f"Command not found: {cmd[0]}"
     except Exception as e:
         return 1, "", str(e)
+
+
+def _python_cmd() -> list[str]:
+    """Resolve the local Python command without assuming `python` is on PATH."""
+    for candidate in _PYTHON_CANDIDATES:
+        if shutil.which(candidate):
+            return [candidate]
+    return ["python"]
+
+
+def _bounded_timeout(timeout: int, default: int = 120) -> int:
+    try:
+        value = int(timeout)
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, 600))
+
+
+def _iter_requirement_files(root: Path) -> list[Path]:
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+
+    def visit(req_path: Path) -> None:
+        req_path = req_path.resolve()
+        if req_path in seen or not req_path.exists():
+            return
+        seen.add(req_path)
+        discovered.append(req_path)
+
+        for raw_line in req_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(("-r ", "--requirement ")):
+                include_target = line.split(maxsplit=1)[1].strip()
+                visit(req_path.parent / include_target)
+
+    for req_path in sorted(root.glob("requirements*.txt")):
+        visit(req_path)
+    visit(root / "requirements/base.txt")
+
+    return discovered
+
+
+def _parse_requirement_name(line: str) -> str:
+    candidate = line.split("#", 1)[0].strip()
+    if not candidate or candidate.startswith(("-", "git+", "http://", "https://")):
+        return ""
+    return re.split(r"[>=<!~;\[]", candidate)[0].strip()
+
+
+def _iter_declared_dependencies(root: Path) -> list[tuple[str, str]]:
+    requirements: list[tuple[str, str]] = []
+
+    for req_file in _iter_requirement_files(root):
+        for raw_line in req_file.read_text(encoding="utf-8").splitlines():
+            pkg = _parse_requirement_name(raw_line)
+            if pkg:
+                requirements.append((pkg, req_file.relative_to(root).as_posix()))
+
+    pyproject_path = root / "pyproject.toml"
+    if pyproject_path.exists():
+        try:
+            parsed = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError:
+            parsed = {}
+
+        project = parsed.get("project", {})
+        for dep in project.get("dependencies", []):
+            pkg = _parse_requirement_name(dep)
+            if pkg:
+                requirements.append((pkg, "pyproject.toml"))
+
+        for group_name, deps in (project.get("optional-dependencies", {}) or {}).items():
+            for dep in deps:
+                pkg = _parse_requirement_name(dep)
+                if pkg:
+                    requirements.append((pkg, f"pyproject.toml[optional:{group_name}]"))
+
+    return requirements
+
+
+def _check_declared_dependencies(root: Path) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    requirements = _iter_declared_dependencies(root)
+    installed: list[tuple[str, str]] = []
+    missing: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    for pkg, source in requirements:
+        key = pkg.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        spec = None
+        for import_name in _package_import_candidates(pkg):
+            spec = importlib.util.find_spec(import_name)
+            if spec is not None:
+                break
+        if spec is not None:
+            installed.append((pkg, source))
+        else:
+            missing.append((pkg, source))
+
+    return installed, missing
+
+
+def _declared_dependency_names(root: Path) -> set[str]:
+    return {
+        pkg.lower()
+        for pkg, _ in _iter_declared_dependencies(root)
+    }
+
+
+def _local_module_names(root: Path) -> set[str]:
+    names = {path.stem for path in root.glob("*.py")}
+    names.update(
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and (path / "__init__.py").exists()
+    )
+    return names
+
+
+def _third_party_imports(root: Path) -> dict[str, list[str]]:
+    imports: dict[str, set[str]] = {}
+    local_names = _local_module_names(root)
+    stdlib_names = set(sys.stdlib_module_names)
+
+    for py_file in root.rglob("*.py"):
+        if any(part in _SKIP_DIRS for part in py_file.parts):
+            continue
+
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+
+        rel_path = py_file.relative_to(root).as_posix()
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.Import):
+                modules = [alias.name.split(".", 1)[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                modules = [node.module.split(".", 1)[0]]
+
+            for module in modules:
+                if not module or module in stdlib_names or module in local_names:
+                    continue
+                package_name = _IMPORT_TO_PACKAGE.get(module, module)
+                imports.setdefault(package_name, set()).add(rel_path)
+
+    return {
+        package: sorted(paths)
+        for package, paths in sorted(imports.items())
+    }
+
+
+def _find_undeclared_dependencies(root: Path) -> dict[str, list[str]]:
+    declared = _declared_dependency_names(root)
+    imports = _third_party_imports(root)
+    return {
+        package: paths
+        for package, paths in imports.items()
+        if package.lower() not in declared
+    }
+
+
+def _package_import_candidates(package: str) -> tuple[str, ...]:
+    explicit = _PACKAGE_TO_IMPORTS.get(package)
+    if explicit:
+        return explicit
+
+    normalized = package.lower()
+    explicit = _PACKAGE_TO_IMPORTS.get(normalized)
+    if explicit:
+        return explicit
+
+    return (package.replace("-", "_").lower(),)
+
+
+def _iter_python_files(root: Path) -> list[Path]:
+    return [
+        py_file
+        for py_file in root.rglob("*.py")
+        if not any(part in _SKIP_DIRS for part in py_file.parts)
+    ]
+
+
+def _detect_active_provider(provider: str = "") -> str:
+    if provider.strip():
+        return provider.strip().lower()
+
+    try:
+        from api_config import load_config
+
+        return str(load_config().get("provider", "")).strip().lower()
+    except Exception:
+        return ""
+
+
+def _partition_missing_dependencies(
+    missing: list[tuple[str, str]]
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
+    """Split missing packages into runtime, development, and optional groups."""
+    runtime_missing: list[tuple[str, str]] = []
+    dev_missing: list[tuple[str, str]] = []
+    optional_missing: list[tuple[str, str]] = []
+
+    for pkg, source in missing:
+        if source in _OPTIONAL_REQUIREMENT_SOURCES:
+            optional_missing.append((pkg, source))
+        elif source in _DEV_REQUIREMENT_SOURCES:
+            dev_missing.append((pkg, source))
+        else:
+            runtime_missing.append((pkg, source))
+
+    return runtime_missing, dev_missing, optional_missing
+
+
+def _has_provider_credentials(active_provider: str) -> bool:
+    if active_provider == "anthropic":
+        for env_name, _ in _PROVIDER_KEY_HINTS["anthropic"]:
+            if os.environ.get(env_name, "").strip():
+                return True
+        for idx in range(2, 6):
+            if os.environ.get(f"ANTHROPIC_API_KEY_{idx}", "").strip():
+                return True
+        return False
+
+    if active_provider in {"openai", "venice"}:
+        env_name = _PROVIDER_KEY_HINTS[active_provider][0][0]
+        if os.environ.get(env_name, "").strip():
+            return True
+        try:
+            from api_config import get_secret
+
+            return bool(get_secret(f"{active_provider}.api_key"))
+        except Exception:
+            return False
+
+    return True
+
+
+def _provider_key_guidance(active_provider: str) -> str:
+    hints = _PROVIDER_KEY_HINTS.get(active_provider)
+    if not hints:
+        return ""
+
+    preferred_env, example = hints[0]
+    if active_provider == "anthropic":
+        return (
+            f"Provider '{active_provider}' has no API key configured. Set {preferred_env} "
+            f"(or numbered variants like ANTHROPIC_API_KEY_1), or load one with "
+            f"/config {active_provider}.api_key=..."
+        )
+
+    return (
+        f"Provider '{active_provider}' has no API key configured. Set {preferred_env} "
+        f"or load one with /config {active_provider}.api_key=..."
+    )
+
+
+def _collect_environment_diagnostics(
+    root: Path,
+    provider: str = "",
+    target: str = "cli",
+) -> dict[str, object]:
+    active_provider = _detect_active_provider(provider)
+    startup_target = target.strip().lower() or "cli"
+    if startup_target not in _STARTUP_TARGET_IMPORTS:
+        startup_target = "cli"
+
+    installed, missing = _check_declared_dependencies(root)
+    undeclared = _find_undeclared_dependencies(root)
+    runtime_missing, dev_missing, optional_missing = _partition_missing_dependencies(missing)
+    runtime_missing_map = {pkg.lower(): (pkg, source) for pkg, source in runtime_missing}
+    provider_missing = [
+        pkg for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
+        if importlib.util.find_spec(pkg) is None
+    ]
+    target_missing = [
+        module for module in _STARTUP_TARGET_IMPORTS[startup_target]
+        if importlib.util.find_spec(module) is None
+    ]
+    startup_runtime_missing = []
+    for pkg in _STARTUP_TARGET_PACKAGES.get(startup_target, []):
+        missing_entry = runtime_missing_map.get(pkg.lower())
+        if missing_entry is not None:
+            startup_runtime_missing.append(missing_entry)
+    for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, []):
+        missing_entry = runtime_missing_map.get(pkg.lower())
+        if missing_entry is not None:
+            startup_runtime_missing.append(missing_entry)
+    startup_runtime_missing = list(dict.fromkeys(startup_runtime_missing))
+
+    python_cmd = " ".join(_python_cmd())
+    has_tests = (
+        (root / "tests").exists()
+        or (root / "pytest.ini").exists()
+        or any(root.rglob("test_*.py"))
+        or any(root.rglob("*_test.py"))
+    )
+    pytest_available = importlib.util.find_spec("pytest") is not None
+
+    blockers: list[str] = []
+    advisories: list[str] = []
+    notes: list[str] = []
+
+    if sys.version_info < (3, 9):
+        blockers.append(
+            f"Python {sys.version_info.major}.{sys.version_info.minor} detected; project requires 3.9+."
+        )
+    else:
+        notes.append(
+            f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} detected."
+        )
+
+    notes.append(f"Launcher: {python_cmd}")
+    notes.append(f"Active provider: {active_provider or 'unknown'}")
+    notes.append(f"Startup target: {startup_target}")
+
+    if startup_runtime_missing:
+        blockers.append(
+            "Startup-critical runtime dependencies are missing: "
+            + ", ".join(pkg for pkg, _ in startup_runtime_missing[:8])
+            + (" ..." if len(startup_runtime_missing) > 8 else "")
+        )
+
+    if startup_target == "gui" and target_missing:
+        blockers.append(
+            "GUI runtime imports are unavailable: "
+            + ", ".join(target_missing)
+        )
+
+    provider_only_missing = [
+        pkg for pkg in provider_missing
+        if pkg.lower() not in {name.lower() for name, _ in startup_runtime_missing}
+    ]
+
+    if provider_only_missing:
+        blockers.append(
+            f"Provider '{active_provider}' is missing required SDK(s): {', '.join(provider_only_missing)}."
+        )
+
+    if active_provider in _PROVIDER_KEY_HINTS and not _has_provider_credentials(active_provider):
+        blockers.append(_provider_key_guidance(active_provider))
+
+    if undeclared:
+        advisories.append(
+            "Imported packages are not declared in requirements: "
+            + ", ".join(list(undeclared)[:8])
+            + (" ..." if len(undeclared) > 8 else "")
+        )
+
+    if has_tests and not pytest_available:
+        advisories.append(
+            "Pytest is not installed, so the test suite cannot run in this environment."
+        )
+
+    if active_provider == "ollama":
+        notes.append(f"Ollama URL: {os.environ.get('OLLAMA_URL', 'http://localhost:11434')}")
+        notes.append("Ollama server health is not probed here; verify it is running before use.")
+    if dev_missing:
+        notes.append(
+            f"Development tools not installed: {len(dev_missing)} "
+            "(tests, linting, and formatting will be limited until installed)."
+        )
+    if optional_missing:
+        notes.append(
+            f"Optional feature packages not installed: {len(optional_missing)} "
+            "(ML and vision tools remain unavailable until installed)."
+        )
+
+    return {
+        "root": root,
+        "provider": active_provider,
+        "target": startup_target,
+        "installed": installed,
+        "missing": missing,
+        "runtime_missing": runtime_missing,
+        "startup_runtime_missing": startup_runtime_missing,
+        "dev_missing": dev_missing,
+        "optional_missing": optional_missing,
+        "undeclared": undeclared,
+        "provider_missing": provider_missing,
+        "provider_only_missing": provider_only_missing,
+        "target_missing": target_missing,
+        "has_tests": has_tests,
+        "pytest_available": pytest_available,
+        "blockers": blockers,
+        "advisories": advisories,
+        "notes": notes,
+    }
+
+
+def startup_blocked(path: str = ".", provider: str = "", target: str = "cli") -> bool:
+    """Return True when the local environment cannot satisfy startup prerequisites."""
+    root = Path(path).resolve()
+    diagnostics = _collect_environment_diagnostics(root, provider=provider, target=target)
+    return bool(diagnostics["blockers"])
+
+
+def startup_doctor(path: str = ".", provider: str = "", target: str = "cli") -> str:
+    """Report startup readiness for the CLI or GUI entrypoints."""
+    root = Path(path).resolve()
+    diagnostics = _collect_environment_diagnostics(root, provider=provider, target=target)
+
+    blockers = diagnostics["blockers"]
+    advisories = diagnostics["advisories"]
+    runtime_missing = diagnostics["runtime_missing"]
+    dev_missing = diagnostics["dev_missing"]
+    undeclared = diagnostics["undeclared"]
+    notes = diagnostics["notes"]
+    active_provider = diagnostics["provider"]
+    python_cmd = " ".join(_python_cmd())
+    startup_runtime_missing = diagnostics["startup_runtime_missing"]
+    provider_only_missing = diagnostics["provider_only_missing"]
+
+    lines = [
+        f"Startup Doctor ({root.name})",
+        f"  Target:               {diagnostics['target']}",
+        f"  Active provider:      {active_provider or 'unknown'}",
+        f"  Runtime missing:      {len(runtime_missing)}",
+        f"  Startup blockers:     {len(blockers)}",
+        f"  Advisories:           {len(advisories)}",
+    ]
+
+    if blockers:
+        lines.append("\nBlockers:")
+        for issue in blockers:
+            lines.append(f"  x {issue}")
+    else:
+        lines.append("\nBlockers:\n  None detected.")
+
+    if advisories:
+        lines.append("\nAdvisories:")
+        for issue in advisories:
+            lines.append(f"  - {issue}")
+
+    if runtime_missing:
+        lines.append("\nMissing runtime packages:")
+        for pkg, source in runtime_missing[:20]:
+            lines.append(f"  - {pkg}  ({source})")
+
+    if dev_missing:
+        lines.append("\nMissing development packages:")
+        for pkg, source in dev_missing[:20]:
+            lines.append(f"  - {pkg}  ({source})")
+
+    if undeclared:
+        lines.append("\nUndeclared imported packages:")
+        for pkg, sources in list(undeclared.items())[:20]:
+            lines.append(f"  - {pkg}  ({', '.join(sources[:3])})")
+
+    lines.append("\nNotes:")
+    for note in notes:
+        lines.append(f"  - {note}")
+
+    if blockers:
+        startup_install_targets = [pkg for pkg, _ in startup_runtime_missing]
+        startup_install_targets.extend(provider_only_missing)
+        startup_install_targets = list(dict.fromkeys(startup_install_targets))
+        lines.append(
+            "\nSuggested startup fix:\n"
+            f"  {python_cmd} -m pip install {' '.join(startup_install_targets or ['-r requirements-core.txt'])}"
+        )
+        if dev_missing:
+            lines.append(
+                f"  Optional dev tooling: {python_cmd} -m pip install -r requirements-dev.txt"
+            )
+
+    return "\n".join(lines)
+
+
+def environment_doctor(path: str = ".", provider: str = "") -> str:
+    """Report startup blockers and environment drift for the active provider."""
+    root = Path(path).resolve()
+    diagnostics = _collect_environment_diagnostics(root, provider=provider, target="cli")
+    active_provider = diagnostics["provider"]
+    installed = diagnostics["installed"]
+    missing = diagnostics["missing"]
+    runtime_missing = diagnostics["runtime_missing"]
+    dev_missing = diagnostics["dev_missing"]
+    optional_missing = diagnostics["optional_missing"]
+    undeclared = diagnostics["undeclared"]
+    provider_missing = diagnostics["provider_missing"]
+    has_tests = diagnostics["has_tests"]
+    pytest_available = diagnostics["pytest_available"]
+    notes = list(diagnostics["notes"])
+    blockers = list(diagnostics["blockers"])
+    advisories = list(diagnostics["advisories"])
+    python_cmd = " ".join(_python_cmd())
+
+    lines = [
+        f"Environment Doctor ({root.name})",
+        f"  Declared dependencies: {len(installed) + len(missing)}",
+        f"  Installed:             {len(installed)}",
+        f"  Missing:               {len(missing)}",
+        f"  Runtime missing:       {len(runtime_missing)}",
+        f"  Dev missing:           {len(dev_missing)}",
+        f"  Optional missing:      {len(optional_missing)}",
+        f"  Startup blockers:      {len(blockers)}",
+        f"  Advisories:            {len(advisories)}",
+    ]
+
+    if blockers:
+        lines.append("\nStartup blockers:")
+        for issue in blockers:
+            lines.append(f"  x {issue}")
+    else:
+        lines.append("\nStartup blockers:\n  None detected.")
+
+    if advisories:
+        lines.append("\nAdvisories:")
+        for issue in advisories:
+            lines.append(f"  - {issue}")
+
+    if runtime_missing:
+        lines.append("\nMissing runtime packages:")
+        for pkg, source in runtime_missing[:20]:
+            lines.append(f"  - {pkg}  ({source})")
+
+    if dev_missing:
+        lines.append("\nMissing development packages:")
+        for pkg, source in dev_missing[:20]:
+            lines.append(f"  - {pkg}  ({source})")
+
+    if undeclared:
+        lines.append("\nUndeclared imported packages:")
+        for pkg, sources in list(undeclared.items())[:20]:
+            lines.append(f"  - {pkg}  ({', '.join(sources[:3])})")
+
+    lines.append("\nNotes:")
+    for note in notes:
+        lines.append(f"  - {note}")
+
+    if runtime_missing or provider_missing or blockers:
+        runtime_install_targets = [pkg for pkg, _ in runtime_missing]
+        provider_install_targets = [
+            pkg for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
+            if pkg.lower() not in {name.lower() for name in runtime_install_targets}
+        ]
+        runtime_install_targets.extend(provider_install_targets)
+        deduped_runtime_targets = list(dict.fromkeys(runtime_install_targets))
+        if deduped_runtime_targets:
+            lines.append(
+                "\nSuggested runtime fix:\n"
+                f"  {python_cmd} -m pip install {' '.join(deduped_runtime_targets)}"
+            )
+        if has_tests and not pytest_available:
+            lines.append(
+                f"  Install test tooling: {python_cmd} -m pip install pytest pytest-cov"
+            )
+        if dev_missing:
+            lines.append(
+                f"  Or install the full dev toolchain: {python_cmd} -m pip install -r requirements-dev.txt"
+            )
+    elif dev_missing:
+        lines.append(
+            "\nSuggested dev fix:\n"
+            f"  {python_cmd} -m pip install -r requirements-dev.txt"
+        )
+
+    return "\n".join(lines)
+
+
+def repo_health(path: str = ".", provider: str = "", timeout: int = 120) -> str:
+    """Run the repo's standard health checks with graceful skips for missing tooling."""
+    root = Path(path).resolve()
+    if not root.exists():
+        return f"Error: Path not found: {path}"
+    if not root.is_dir():
+        return f"Error: Not a directory: {path}"
+
+    timeout = _bounded_timeout(timeout, default=120)
+    has_tests = (
+        (root / "tests").exists()
+        or (root / "pytest.ini").exists()
+        or any(root.rglob("test_*.py"))
+        or any(root.rglob("*_test.py"))
+    )
+
+    compile_errors: list[str] = []
+    python_files = _iter_python_files(root)
+    for py_file in python_files:
+        try:
+            py_compile.compile(str(py_file), doraise=True)
+        except py_compile.PyCompileError as exc:
+            compile_errors.append(str(exc))
+        except Exception as exc:
+            compile_errors.append(f"{py_file}: {exc}")
+
+    compile_summary = f"OK compileall passed for {len(python_files)} file(s)."
+    if compile_errors:
+        compile_summary = "FAIL compileall found syntax errors.\n" + "\n".join(compile_errors[:10])
+
+    pytest_available = importlib.util.find_spec("pytest") is not None
+    ruff_available = importlib.util.find_spec("ruff") is not None
+
+    if has_tests and pytest_available:
+        tests_summary = run_tests(str(root), framework="pytest", timeout=timeout)
+    elif has_tests:
+        tests_summary = (
+            "SKIP pytest is not installed. "
+            f"Install with: {' '.join(_python_cmd())} -m pip install -r requirements-dev.txt"
+        )
+    else:
+        tests_summary = "SKIP no test suite detected."
+
+    if ruff_available:
+        lint_summary = lint_check(str(root), tool="ruff")
+    else:
+        lint_summary = (
+            "SKIP ruff is not installed. "
+            f"Install with: {' '.join(_python_cmd())} -m pip install -r requirements-dev.txt"
+        )
+
+    return "\n\n".join(
+        [
+            f"Repo Health ({root.name})",
+            environment_doctor(str(root), provider=provider),
+            "Compile Check:\n" + compile_summary,
+            "Test Check:\n" + tests_summary,
+            "Lint Check:\n" + lint_summary,
+        ]
+    )
 
 
 # ── 1. RunTests ───────────────────────────────────────────────────────────────
@@ -59,7 +751,7 @@ def run_tests(path: str = ".", framework: str = "", args: str = "",
     extra = args.split() if args else []
 
     if framework in ("pytest", "py"):
-        cmd = ["python", "-m", "pytest", "--tb=short", "-q"] + extra + [str(path)]
+        cmd = _python_cmd() + ["-m", "pytest", "--tb=short", "-q"] + extra + [str(path)]
         code, out, err = _run(cmd, timeout=timeout)
         output = out + (("\n" + err) if err.strip() else "")
 
@@ -75,16 +767,16 @@ def run_tests(path: str = ".", framework: str = "", args: str = "",
         if failures:
             lines.append(f"\nFailed tests ({len(failures)}):")
             for f in failures[:20]:
-                lines.append(f"  ✗ {f.strip()}")
+                lines.append(f"  x {f.strip()}")
             if len(failures) > 20:
                 lines.append(f"  ... and {len(failures) - 20} more")
 
-        lines.append(f"\n{'─'*50}")
+        lines.append(f"\n{'-'*50}")
         lines.append(output[-3000:] if len(output) > 3000 else output)
         return "\n".join(lines)
 
     elif framework in ("unittest",):
-        cmd = ["python", "-m", "unittest", "discover", "-s", str(path)] + extra
+        cmd = _python_cmd() + ["-m", "unittest", "discover", "-s", str(path)] + extra
         code, out, err = _run(cmd, timeout=timeout)
         return f"Framework: unittest\nExit code: {code}\n\n{(out + err)[-3000:]}"
 
@@ -348,7 +1040,7 @@ def refactor_rename(old_name: str, new_name: str, path: str = ".",
     if not root.exists():
         return f"Error: Path not found: {path}"
 
-    # Word-boundary pattern — only replace whole words
+    # Word-boundary pattern - only replace whole words
     pattern = re.compile(rf"\b{re.escape(old_name)}\b")
 
     changed_files: list[tuple[Path, str, str]] = []  # (path, old, new)
@@ -374,7 +1066,7 @@ def refactor_rename(old_name: str, new_name: str, path: str = ".",
         return f"No occurrences of '{old_name}' found in {path} ({file_pattern})"
 
     lines = [
-        f"{'DRY RUN — ' if dry_run else ''}Rename '{old_name}' → '{new_name}'",
+        f"{'DRY RUN - ' if dry_run else ''}Rename '{old_name}' -> '{new_name}'",
         f"Files affected: {len(changed_files)}",
     ]
 
@@ -390,7 +1082,7 @@ def refactor_rename(old_name: str, new_name: str, path: str = ".",
         for i, (ol, ml) in enumerate(zip(orig_lines, mod_lines), 1):
             if ol != ml:
                 lines.append(f"    L{i}: {ol.strip()}")
-                lines.append(f"       → {ml.strip()}")
+                lines.append(f"       -> {ml.strip()}")
                 shown += 1
                 if shown >= 5:
                     break
@@ -409,7 +1101,7 @@ def refactor_rename(old_name: str, new_name: str, path: str = ".",
                 applied += 1
             except Exception as e:
                 lines.append(f"  Error writing {fp}: {e}")
-        lines.append(f"\n✓ Renamed in {applied}/{len(changed_files)} files.")
+        lines.append(f"\nOK Renamed in {applied}/{len(changed_files)} files.")
 
     return "\n".join(lines)
 
@@ -477,7 +1169,7 @@ def analyze_code(path: str) -> str:
                 # Flag bare except
                 if node.type is None:
                     totals["issues"].append(
-                        f"  {fp.name}:{node.lineno}: bare 'except:' clause — catch specific exceptions"
+                        f"  {fp.name}:{node.lineno}: bare 'except:' clause - catch specific exceptions"
                     )
 
     lines = [
@@ -513,64 +1205,35 @@ def check_deps(path: str = ".") -> str:
     """Check which project dependencies are installed and which are missing."""
 
     root = Path(path).resolve()
-    requirements: list[tuple[str, str]] = []  # (pkg_name, source)
-
-    # requirements.txt
-    for req_file in ["requirements.txt", "requirements-dev.txt", "requirements/base.txt"]:
-        rf = root / req_file
-        if rf.exists():
-            for line in rf.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    pkg = re.split(r"[>=<!;\[]", line)[0].strip()
-                    if pkg:
-                        requirements.append((pkg, req_file))
-
-    # pyproject.toml (basic parsing)
-    pp = root / "pyproject.toml"
-    if pp.exists():
-        content = pp.read_text()
-        # Find [project] dependencies
-        for m in re.finditer(r'"([^"@\s]+)(?:@[^"]+)?"', content):
-            pkg = re.split(r"[>=<!;\[]", m.group(1))[0].strip()
-            if pkg and "." not in pkg:  # skip URLs
-                requirements.append((pkg, "pyproject.toml"))
+    requirements = _iter_declared_dependencies(root)
 
     if not requirements:
         return (f"No requirements file found in {path}. "
-                "Looked for: requirements.txt, pyproject.toml")
-
-    # Check each with importlib
-    import importlib.util
-    installed, missing = [], []
-
-    seen = set()
-    for pkg, source in requirements:
-        if pkg.lower() in seen:
-            continue
-        seen.add(pkg.lower())
-
-        # Map pkg name to import name
-        import_name = pkg.replace("-", "_").lower()
-        spec = importlib.util.find_spec(import_name)
-        if spec is not None:
-            installed.append((pkg, source))
-        else:
-            missing.append((pkg, source))
+                "Looked for: requirements.txt, requirements-dev.txt, requirements-core.txt, pyproject.toml")
+    installed, missing = _check_declared_dependencies(root)
+    undeclared = _find_undeclared_dependencies(root)
 
     lines = [
         f"Dependency Check ({root.name})",
         f"  Installed: {len(installed)}",
         f"  Missing:   {len(missing)}",
+        f"  Undeclared imports: {len(undeclared)}",
     ]
 
     if missing:
         lines.append(f"\nMissing packages:")
         for pkg, src in missing:
-            lines.append(f"  ✗  {pkg}  (from {src})")
-        lines.append(f"\nInstall with: pip install {' '.join(p for p, _ in missing)}")
+            lines.append(f"  x  {pkg}  (from {src})")
+        lines.append(
+            f"\nInstall with: {' '.join(_python_cmd())} -m pip install {' '.join(p for p, _ in missing)}"
+        )
     else:
         lines.append("\nAll dependencies are installed.")
+
+    if undeclared:
+        lines.append("\nImported but undeclared packages:")
+        for pkg, sources in undeclared.items():
+            lines.append(f"  x  {pkg}  (used by {', '.join(sources[:3])})")
 
     return "\n".join(lines)
 
@@ -627,7 +1290,7 @@ def register_code_tools() -> None:
             "properties": {
                 "path":       {"type": "string",  "description": "File or directory to format", "default": "."},
                 "formatter":  {"type": "string",  "description": "Formatter to use (auto-detected if empty)", "default": ""},
-                "check_only": {"type": "boolean", "description": "Preview only — do not write changes", "default": False},
+                "check_only": {"type": "boolean", "description": "Preview only - do not write changes", "default": False},
             },
         },
         handler=format_code, category="code",
@@ -644,7 +1307,7 @@ def register_code_tools() -> None:
             "properties": {
                 "symbol":   {"type": "string", "description": "Symbol name to find"},
                 "path":     {"type": "string", "description": "Root directory to search", "default": "."},
-                "language": {"type": "string", "description": "Language filter (py/js/ts/go — empty = all)", "default": ""},
+                "language": {"type": "string", "description": "Language filter (py/js/ts/go - empty = all)", "default": ""},
             },
             "required": ["symbol"],
         },
@@ -700,4 +1363,77 @@ def register_code_tools() -> None:
             },
         },
         handler=check_deps, category="code",
+    )
+
+    registry.register(
+        name="EnvironmentDoctor",
+        description=(
+            "Audit local startup health for this project: Python version, active provider SDK, "
+            "pytest availability, and missing declared dependencies."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Project root directory", "default": "."},
+                "provider": {
+                    "type": "string",
+                    "description": "Provider to validate (anthropic/openai/venice/ollama). "
+                                   "Defaults to the configured provider if omitted.",
+                    "default": "",
+                },
+            },
+        },
+        handler=environment_doctor, category="code",
+    )
+
+    registry.register(
+        name="StartupDoctor",
+        description=(
+            "Check whether the local CLI or GUI entrypoint can start cleanly. "
+            "Focuses on runtime blockers such as missing SDKs, GUI packages, and provider credentials."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Project root directory", "default": "."},
+                "provider": {
+                    "type": "string",
+                    "description": "Provider to validate (anthropic/openai/venice/ollama). "
+                                   "Defaults to the configured provider if omitted.",
+                    "default": "",
+                },
+                "target": {
+                    "type": "string",
+                    "description": "Startup target to validate (cli/gui).",
+                    "default": "cli",
+                },
+            },
+        },
+        handler=startup_doctor, category="code",
+    )
+
+    registry.register(
+        name="RepoHealth",
+        description=(
+            "Run the standard repo health audit: environment doctor, compileall, pytest when "
+            "available, and ruff when available."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Project root directory", "default": "."},
+                "provider": {
+                    "type": "string",
+                    "description": "Provider to validate (anthropic/openai/venice/ollama). "
+                                   "Defaults to the configured provider if omitted.",
+                    "default": "",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Per-check timeout in seconds for pytest and lint steps.",
+                    "default": 120,
+                },
+            },
+        },
+        handler=repo_health, category="code",
     )

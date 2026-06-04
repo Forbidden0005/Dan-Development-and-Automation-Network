@@ -14,6 +14,7 @@ when Dan has clear, actionable error output from these tools.
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -32,6 +33,7 @@ _command_validator = SecureCommandExecutor(
     use_whitelist=True,
     max_execution_time=_MAX_TIMEOUT_SECONDS,
 )
+_PYTHON_CANDIDATES = ("python", "py")
 
 # -- Language detection --------------------------------------------------------
 
@@ -139,6 +141,22 @@ def _validate_process_command(cmd: list[str]) -> None:
     _command_validator.validate_command(_command_to_string(cmd))
 
 
+def _resolve_python_command() -> list[str]:
+    """Prefer python on PATH, but fall back to the Windows launcher when needed."""
+    for candidate in _PYTHON_CANDIDATES:
+        if shutil.which(candidate):
+            return [candidate]
+    return ["python"]
+
+
+def _resolve_interpreter_command(command: list[str] | None) -> list[str] | None:
+    if command is None or not command:
+        return command
+    if command[0] == "python":
+        return _resolve_python_command() + command[1:]
+    return command
+
+
 def _run_proc(cmd: list[str], cwd: str | None = None,
               stdin_text: str = "", timeout: int = 30,
               validate_command: bool = True) -> tuple[int, str, str, float]:
@@ -229,6 +247,7 @@ def run_code(code: str, language: str = "python",
         tmp_path = f.name
 
     try:
+        interp = _resolve_interpreter_command(interp)
         cmd = interp + [tmp_path]
         code_r, stdout, stderr, elapsed = _run_proc(cmd, stdin_text=stdin,
                                                      timeout=timeout)
@@ -307,6 +326,7 @@ def run_file(path: str, args: str = "", stdin: str = "", timeout: int = 30) -> s
         # `go run` needs the file directly
         cmd = ["go", "run", str(p)] + extra_args
     else:
+        interp = _resolve_interpreter_command(interp)
         cmd = interp + [str(p)] + extra_args
 
     code_r, stdout, stderr, elapsed = _run_proc(
@@ -375,7 +395,7 @@ def _detect_test_framework(root: Path) -> str:
 
 
 def _run_pytest(root: Path, extra: list, timeout: int) -> str:
-    cmd = ["python", "-m", "pytest", "--tb=short", "-v", "--no-header"] + extra + [str(root)]
+    cmd = _resolve_python_command() + ["-m", "pytest", "--tb=short", "-v", "--no-header"] + extra + [str(root)]
     rc, out, err, elapsed = _run_proc(cmd, timeout=timeout)
     combined = out + ("\n" + err if err.strip() else "")
 

@@ -13,7 +13,11 @@ echo   setx ANTHROPIC_API_KEY_1 "your-key-here"
 echo   setx OPENAI_API_KEY "your-key-here"
 echo.
 
-python dan_gui.py
+py Dan.py --doctor --target gui --provider %DAN_PROVIDER%
+if errorlevel 1 goto end
 
+py dan_gui_modern.py
+
+:end
 endlocal
 pause

@@ -56,12 +56,14 @@ Ollama does not require an API key, but the Ollama server must be running.
 Launch the GUI:
 
 ```bash
-python dan_gui.py
+python Dan.py --doctor --target gui
+python dan_gui_modern.py
 ```
 
 Launch the terminal interface:
 
 ```bash
+python Dan.py --doctor --target cli
 python Dan.py
 ```
 
@@ -91,6 +93,19 @@ Run coverage locally:
 pytest --cov --cov-report=term-missing
 ```
 
+Audit local bootstrap health:
+
+```bash
+python Dan.py --doctor --target cli
+python -c "import code_tools; print(code_tools.startup_doctor('.', target='gui'))"
+```
+
+Run the full repository health audit:
+
+```bash
+python scripts/repo_health.py
+```
+
 ## Repository Hygiene
 
 Generated files, local secrets, local app state, test caches, and virtual environments are ignored by default. Keep heavy optional dependencies in their dedicated requirements files so the core install remains fast and predictable.
@@ -99,7 +114,8 @@ Generated files, local secrets, local app state, test caches, and virtual enviro
 
 ```text
 Dan.py                Terminal entry point
-dan_gui.py            Desktop GUI entry point
+dan_gui_modern.py     Modern desktop GUI entry point
+dan_gui.py            Legacy desktop GUI/controller shell
 agent.py              Agent loop and tool orchestration
 providers.py          Model provider adapters
 tool_registry.py      Shared tool registry

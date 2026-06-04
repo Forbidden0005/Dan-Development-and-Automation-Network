@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import customtkinter as ctk
 import tkinter as tk
+
+from gui_compat import ctk
 
 
 def popup_base(parent, title: str, width: int, height: int, surface_color: str) -> ctk.CTkToplevel:

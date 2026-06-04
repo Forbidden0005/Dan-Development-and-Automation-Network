@@ -41,6 +41,11 @@ _TOOL_LABELS: dict[str, Callable] = {
     "LintCheck":   lambda i: "Linting",
     "FormatCode":  lambda i: "Formatting",
     "AnalyzeCode": lambda i: f"Analyzing: {i.get('path', '')}",
+    "IndexProject": lambda i: f"Indexing project: {i.get('project_root', '.')}",
+    "SymbolLookup": lambda i: f"Looking up symbol: {i.get('name', '')}",
+    "DependencyGraph": lambda i: f"Building dependency graph: {i.get('file_path', '')}",
+    "SemanticSearch": lambda i: f"Searching codebase: \"{i.get('query', '')}\"",
+    "EmbedProject": lambda i: f"Embedding project: {i.get('project_root', '.')}",
     "Spawn":       lambda i: f"Spawning worker: {i.get('prompt', '')[:40]}",
 }
 
@@ -81,6 +86,9 @@ _KEYWORD_MAP: list[tuple[str, set[str]]] = [
                    "organize files"}),
     ("project",   {"load project", "scan project", "project map", "codebase",
                    "show project", "unload project", "loadproject"}),
+    ("index",     {"index project", "symbol lookup", "dependency graph", "semantic search",
+                   "find usages", "where is", "where is defined", "what imports",
+                   "who imports", "codebase index", "embed project"}),
 ]
 
 
@@ -175,6 +183,8 @@ Core tools always available: Read, Write, Edit, Append, Move, Copy, Diff, Bash, 
 Additional tools loaded on demand: WebFetch, WebSearch (web), Remember/Recall/Forget (knowledge), \
 Git operations (git), test/lint/format runners (code), Spawn/CheckWorker (workers), \
 LoadProject/ShowProject/UnloadProject (project — scan a codebase and inject full structure into context).
+
+Index tools available when relevant: IndexProject, SymbolLookup, FindUsages, DependencyGraph, SemanticSearch, EmbedProject.
 
 Guidelines:
 - Be direct and concise
