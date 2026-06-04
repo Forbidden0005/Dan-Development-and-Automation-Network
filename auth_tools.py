@@ -9,7 +9,6 @@ from auth_system import get_auth_manager, get_current_session, require_auth, req
 
 logger = logging.getLogger(__name__)
 
-@require_auth()
 def login_user(api_key: str) -> str:
     """Authenticate user with API key"""
     try:
@@ -153,6 +152,31 @@ def test_permission(action: str = "read") -> str:
 
 def register_auth_tools():
     """Register authentication tools"""
+
+    registry.register(
+        name="LoginUser",
+        description="Authenticate with an API key and start a session",
+        parameters={
+            "type": "object",
+            "properties": {
+                "api_key": {"type": "string", "description": "API key for authentication"}
+            },
+            "required": ["api_key"]
+        },
+        handler=login_user,
+        category="auth"
+    )
+
+    registry.register(
+        name="LogoutUser",
+        description="Logout the current authenticated session",
+        parameters={
+            "type": "object",
+            "properties": {}
+        },
+        handler=logout_user,
+        category="auth"
+    )
     
     registry.register(
         name="AuthStatus",

@@ -135,7 +135,9 @@ class AuthManager:
             '%(asctime)s [AUTH] %(levelname)s: %(message)s'
         ))
         self.audit_logger = logging.getLogger("dan.auth.audit")
-        self.audit_logger.addHandler(audit_handler)
+        if not any(isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", None) == audit_handler.baseFilename
+                   for handler in self.audit_logger.handlers):
+            self.audit_logger.addHandler(audit_handler)
         self.audit_logger.setLevel(logging.INFO)
     
     def _load_auth_data(self):
@@ -294,11 +296,14 @@ class AuthManager:
             ip_address=ip_address,
             user_agent=user_agent
         )
-        
+
         if not user:
             self.audit_logger.warning(f"Authentication failed - invalid API key: {api_key[:8]}... from {ip_address}")
             self.auth_attempts.append(attempt)
             return None
+
+        # Wrong key for known user can't be inferred directly from hash lookup,
+        # but once a matching user is found, all remaining checks apply below.
         
         # Check if user is locked out
         if user.locked_until > current_time:
@@ -326,6 +331,16 @@ class AuthManager:
         self.audit_logger.info(f"User {user.username} authenticated successfully from {ip_address}")
         
         return session
+
+    def record_failed_attempt(self, username: str) -> None:
+        """Increment failed attempts and apply lockout when threshold is reached."""
+        user = self.users.get(username)
+        if not user:
+            return
+        user.failed_attempts += 1
+        if user.failed_attempts >= AUTH_CONFIG["max_failed_attempts"]:
+            user.locked_until = time.time() + AUTH_CONFIG["lockout_duration"]
+        self._save_auth_data()
     
     def _create_session(self, user: User) -> Session:
         """Create a new session for authenticated user"""

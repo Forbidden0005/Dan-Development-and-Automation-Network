@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import copy
 from pathlib import Path
 
 from config import USER_DATA_DIR
@@ -38,7 +39,7 @@ DEFAULT_CONFIG = {
 
 def load_config() -> dict:
     """Load config from disk, merging with defaults."""
-    config = dict(DEFAULT_CONFIG)
+    config = copy.deepcopy(DEFAULT_CONFIG)
     if CONFIG_FILE.exists():
         try:
             saved = json.loads(CONFIG_FILE.read_text())
@@ -54,7 +55,12 @@ def save_config(config: dict) -> str:
     """Save config to disk."""
     try:
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        to_save = copy.deepcopy(config)
+        for provider in ("anthropic", "openai", "venice"):
+            section = to_save.get(provider)
+            if isinstance(section, dict):
+                section.pop("api_key", None)
+        CONFIG_FILE.write_text(json.dumps(to_save, indent=2), encoding="utf-8")
         return f"Config saved to {CONFIG_FILE}"
     except Exception as e:
         return f"Error saving config: {e}"

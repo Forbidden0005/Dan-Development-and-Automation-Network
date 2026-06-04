@@ -194,9 +194,14 @@ def run_bash(command: str, timeout: int = 30) -> str:
     try:
         # Sanitize command input
         command = sanitize_user_input(command, max_length=2000)
-        
-        # Execute using secure command executor
-        result = _command_executor.execute_command(command, cwd=None)
+
+        old_timeout = _command_executor.max_execution_time
+        _command_executor.max_execution_time = max(1, min(int(timeout), 300))
+        try:
+            # Execute using secure command executor
+            result = _command_executor.execute_command(command, cwd=None)
+        finally:
+            _command_executor.max_execution_time = old_timeout
         
         # Limit output size
         if len(result) > 10000:

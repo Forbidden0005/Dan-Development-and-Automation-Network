@@ -42,6 +42,18 @@ def register(name: str, description: str, parameters: dict[str, Any],
     logger.debug("Registered tool: %s (%s)", name, category)
 
 
+def register_tool(name: str, description: str, parameters: dict[str, Any],
+                  handler: Callable[..., str], category: str = "core") -> None:
+    """Backward-compatible alias for older callers."""
+    register(
+        name=name,
+        description=description,
+        parameters=parameters,
+        handler=handler,
+        category=category,
+    )
+
+
 def get_tool(name: str) -> Tool | None:
     return _TOOLS.get(name)
 

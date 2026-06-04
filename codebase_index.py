@@ -244,7 +244,10 @@ def _extract_js_ts(content: str) -> tuple[list[Symbol], list[FileDep]]:
         symbols.append(Symbol(name, "function", line, f"const {name} = ({args}) =>", ""))
 
     # Imports
-    for m in re.finditer(r"(?:import|require)\s*\(?['\"]([^'\"]+)['\"]", content):
+    for m in re.finditer(
+        r"(?:import\s+(?:[^;]*?\s+from\s+)?|require\s*\()\s*['\"]([^'\"]+)['\"]",
+        content,
+    ):
         mod  = m.group(1)
         local = mod.startswith(".")
         base = mod.lstrip("./").split("/")[0] if not local else mod
@@ -412,18 +415,9 @@ def _index_project(root_str: str, force: bool = False) -> str:
                     (file_id, d.module_name, 1 if d.is_local else 0, d.from_clause)
                 )
 
-            # Rebuild FTS for affected rows
-            db.execute("DELETE FROM symbols_fts WHERE rowid IN "
-                       "(SELECT id FROM symbols WHERE file_id=?)", (file_id,))
-            for sym in db.execute(
-                "SELECT id, name, signature, docstring FROM symbols WHERE file_id=?",
-                (file_id,)
-            ):
-                db.execute(
-                    "INSERT INTO symbols_fts(rowid, name, signature, docstring)"
-                    " VALUES (?,?,?,?)",
-                    (sym["id"], sym["name"], sym["signature"], sym["docstring"])
-                )
+    if indexed or updated:
+        with db:
+            db.execute("INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')")
 
     elapsed = time.time() - t0
     total   = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
