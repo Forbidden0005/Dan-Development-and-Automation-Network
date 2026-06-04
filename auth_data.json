@@ -1,0 +1,120 @@
+{
+  "users": {
+    "admin": {
+      "username": "admin",
+      "api_key_hash": "92fa58ea602c227953c9666bbdf4629a7b3399d57ae6eade579b45a4e12f6de7",
+      "roles": [
+        "admin"
+      ],
+      "created": 1775926186.451671,
+      "last_login": 1775927024.4661214,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "is_active": true
+    },
+    "testuser": {
+      "username": "testuser",
+      "api_key_hash": "3990843f3a599cf437a70d86aa1eb56b3150db54fa73f9b915aff25d64ff6f77",
+      "roles": [
+        "developer"
+      ],
+      "created": 1775926237.324564,
+      "last_login": 1775926237.3925424,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "is_active": true
+    },
+    "alice_dev": {
+      "username": "alice_dev",
+      "api_key_hash": "8d17acec0eca69aeadd686a3ef839157492d5df92ae6cd6956b7c3a8347600e1",
+      "roles": [
+        "developer"
+      ],
+      "created": 1775926791.0859756,
+      "last_login": 0.0,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "is_active": true
+    },
+    "bob_analyst": {
+      "username": "bob_analyst",
+      "api_key_hash": "0b8f6c904c87a8e7f42d0d4fe867ee1d5f1be9818c8b4b6f4c6ab6de147cc5ff",
+      "roles": [
+        "analyst"
+      ],
+      "created": 1775926806.4502347,
+      "last_login": 0.0,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "is_active": true
+    },
+    "charlie_admin": {
+      "username": "charlie_admin",
+      "api_key_hash": "a6bd5b13005991d98599b93d97e259bac483394ed2a0702dc8e5f3e00a93c7a7",
+      "roles": [
+        "admin"
+      ],
+      "created": 1775926806.5178905,
+      "last_login": 0.0,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "is_active": true
+    },
+    "diana_readonly": {
+      "username": "diana_readonly",
+      "api_key_hash": "9513a8efa2edbd47f1e71e419271a2a1721f3b12ec42ec01a2cc1e37e4c924e3",
+      "roles": [
+        "readonly"
+      ],
+      "created": 1775926806.584669,
+      "last_login": 0.0,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "is_active": true
+    },
+    "PocketMonkey96": {
+      "username": "PocketMonkey96",
+      "api_key_hash": "8e974858fe47a0a1dcd341a7b4f9146b5438d8be304fdc940f69bc0cb6309046",
+      "roles": [
+        "admin"
+      ],
+      "created": 1775928741.8704755,
+      "last_login": 0.0,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "is_active": true
+    }
+  },
+  "sessions": {
+    "GHiDJM5n_48SA87PG4HHmhmCRlfsEnPJ4uQT5QSFkTI": {
+      "session_id": "GHiDJM5n_48SA87PG4HHmhmCRlfsEnPJ4uQT5QSFkTI",
+      "username": "testuser",
+      "created": 1775926237.3932629,
+      "expires": 1775929837.3932629,
+      "last_activity": 1775926237.3932629,
+      "permissions": [
+        "workers.*",
+        "tools.write",
+        "tools.glob",
+        "knowledge.*",
+        "actions.*",
+        "tools.listdir",
+        "tools.edit",
+        "tools.bash",
+        "skills.*",
+        "tools.grep",
+        "tools.read"
+      ]
+    },
+    "KHYJK6PYlrwvkYIkpUhxd5czvRbgWW2TOAy2D5_lXuk": {
+      "session_id": "KHYJK6PYlrwvkYIkpUhxd5czvRbgWW2TOAy2D5_lXuk",
+      "username": "admin",
+      "created": 1775927024.4671652,
+      "expires": 1775930624.4671652,
+      "last_activity": 1775927024.4671652,
+      "permissions": [
+        "*"
+      ]
+    }
+  }
+}

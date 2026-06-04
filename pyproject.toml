@@ -1,0 +1,38 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "--tb=short --strict-markers"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "Dan",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["E9", "F821", "F822", "F823"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "Dan/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+skip_empty = true
+show_missing = true

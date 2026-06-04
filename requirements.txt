@@ -1,0 +1,8 @@
+# Core runtime dependencies.
+# Optional heavy tool families are split out to keep the default install lean:
+#   pip install -r requirements-vision.txt
+#   pip install -r requirements-ml.txt
+# Development and CI tooling:
+#   pip install -r requirements-dev.txt
+
+-r requirements-core.txt
