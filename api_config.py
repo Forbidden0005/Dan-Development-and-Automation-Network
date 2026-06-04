@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from config import USER_DATA_DIR
@@ -9,12 +10,16 @@ from config import USER_DATA_DIR
 logger = logging.getLogger(__name__)
 
 CONFIG_FILE = USER_DATA_DIR / "api_config.json"
+SECRET_KEY_ENV_MAP = {
+    "anthropic.api_key": "ANTHROPIC_API_KEY",
+    "openai.api_key": "OPENAI_API_KEY",
+    "venice.api_key": "VENICE_API_KEY",
+}
 
 DEFAULT_CONFIG = {
     "provider": "ollama",
     "model": "",
     "venice": {
-        "api_key": "",
         "model": "llama-3.3-70b",
         "base_url": "https://api.venice.ai/api/v1",
     },
@@ -37,6 +42,8 @@ def load_config() -> dict:
     if CONFIG_FILE.exists():
         try:
             saved = json.loads(CONFIG_FILE.read_text())
+            if isinstance(saved.get("venice"), dict):
+                saved["venice"].pop("api_key", None)
             _deep_merge(config, saved)
         except Exception as e:
             logger.warning("Failed to load config: %s", e)
@@ -53,8 +60,33 @@ def save_config(config: dict) -> str:
         return f"Error saving config: {e}"
 
 
+def get_secret(key: str) -> str:
+    """Return a secret value from environment-backed storage."""
+    env_key = SECRET_KEY_ENV_MAP.get(key)
+    if not env_key:
+        return ""
+    return os.environ.get(env_key, "").strip()
+
+
+def set_secret(key: str, value: str) -> str:
+    """Set or clear a secret for the current process session only."""
+    env_key = SECRET_KEY_ENV_MAP.get(key)
+    if not env_key:
+        return f"Unknown secret key: {key}"
+
+    value = value.strip()
+    if value:
+        os.environ[env_key] = value
+        return f"Loaded {key} for the current session only. Persist it via env var {env_key}."
+
+    os.environ.pop(env_key, None)
+    return f"Cleared {key} from the current session."
+
+
 def get_value(key: str) -> str:
     """Get a config value by dot-path (e.g. 'venice.model')."""
+    if key in SECRET_KEY_ENV_MAP:
+        return _mask(key, get_secret(key))
     config = load_config()
     parts = key.split(".")
     val = config
@@ -68,6 +100,9 @@ def get_value(key: str) -> str:
 
 def set_value(key: str, value: str) -> str:
     """Set a config value by dot-path (e.g. 'venice.api_key=xxx')."""
+    if key in SECRET_KEY_ENV_MAP:
+        return set_secret(key, value)
+
     config = load_config()
     parts = key.split(".")
     target = config
@@ -94,7 +129,15 @@ def show_config() -> str:
             continue
         lines.append(f"  [{provider}]")
         for k, v in section.items():
+            if k == "api_key":
+                continue
             lines.append(f"    {k}: {_mask(k, str(v))}")
+        secret_key = f"{provider}.api_key"
+        if secret_key in SECRET_KEY_ENV_MAP:
+            secret_value = get_secret(secret_key)
+            source = "environment" if secret_value else "not set"
+            lines.append(f"    api_key: {_mask('api_key', secret_value) if secret_value else '(not set)'}")
+            lines.append(f"    api_key_source: {source}")
         lines.append("")
 
     return "\n".join(lines)

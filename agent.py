@@ -135,6 +135,38 @@ def _extract_text_tool_call(text: str) -> "ToolCall | None":
         pass
     return None
 
+
+def _build_assistant_content(resp: Response) -> list[dict]:
+    """Convert a provider response into structured assistant content blocks."""
+    assistant_content: list[dict] = []
+    if resp.text:
+        assistant_content.append({"type": "text", "text": resp.text})
+    for tc in resp.tool_calls:
+        assistant_content.append({
+            "type": "tool_use",
+            "id": tc.id,
+            "name": tc.name,
+            "input": tc.input,
+        })
+    return assistant_content
+
+
+def _last_message_text(messages: list[dict]) -> str:
+    """Extract human-readable text from the last message in the transcript."""
+    if not messages:
+        return ""
+
+    last = messages[-1]
+    content = last.get("content", "")
+    if isinstance(content, list):
+        return " ".join(
+            block.get("text", "") for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    if isinstance(content, str):
+        return content
+    return ""
+
 SYSTEM_PROMPT = """\
 You are Dan, a powerful AI development assistant. You help developers by reading, writing, \
 and editing code, running commands, searching the web, and managing knowledge.
@@ -276,16 +308,7 @@ def run_agent_loop(
             return resp.text, messages
 
         # ── Build assistant message (text + tool_use blocks) ──────────────────
-        assistant_content: list[dict] = []
-        if resp.text:
-            assistant_content.append({"type": "text", "text": resp.text})
-        for tc in resp.tool_calls:
-            assistant_content.append({
-                "type": "tool_use",
-                "id":   tc.id,
-                "name": tc.name,
-                "input": tc.input,
-            })
+        assistant_content = _build_assistant_content(resp)
         messages.append({"role": "assistant", "content": assistant_content})
 
         # ── Execute tools ─────────────────────────────────────────────────────
@@ -313,17 +336,7 @@ def run_agent_loop(
             return resp.text, messages
 
     # ── Turn limit reached ────────────────────────────────────────────────────
-    last_text = ""
-    if messages:
-        last    = messages[-1]
-        content = last.get("content", "")
-        if isinstance(content, list):
-            last_text = " ".join(
-                b.get("text", "") for b in content
-                if isinstance(b, dict) and b.get("type") == "text"
-            )
-        elif isinstance(content, str):
-            last_text = content
+    last_text = _last_message_text(messages)
 
     notice = (
         f"⚠️  Reached the tool-call limit ({max_turns} turns). "

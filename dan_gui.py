@@ -25,9 +25,14 @@ from dan_gui_components import (
     popup_base as component_popup_base,
 )
 from dan_gui_support import (
+    DEFAULT_PROMPT_TEMPLATE,
+    build_actions_text,
     estimate_tokens,
+    extract_assistant_text,
     format_relative_date,
     infer_provider_from_model,
+    sanitize_prompt_name,
+    session_title_from_file,
     timestamp_label,
 )
 from providers import get_provider
@@ -703,14 +708,9 @@ class DanGUI(ctk.CTk):
                 if isinstance(content, str) and content.strip():
                     self.add_message("user", content)
             elif role == "assistant":
-                if isinstance(content, str) and content.strip():
-                    self.add_message("assistant", content)
-                elif isinstance(content, list):
-                    text = "\n".join(
-                        b.get("text","").strip() for b in content
-                        if isinstance(b, dict) and b.get("type") == "text"
-                    ).strip()
-                    if text: self.add_message("assistant", text)
+                text = extract_assistant_text(content)
+                if text:
+                    self.add_message("assistant", text)
 
     def attach_file(self):
         fn = filedialog.askopenfilename()
@@ -733,16 +733,7 @@ class DanGUI(ctk.CTk):
 
     @staticmethod
     def _session_title(s: dict) -> str:
-        try:
-            fp   = USER_DATA_DIR / "sessions" / s["filename"]
-            data = json.loads(fp.read_text(encoding="utf-8"))
-            for msg in data.get("messages", []):
-                if msg.get("role") == "user":
-                    c = msg.get("content", "")
-                    if isinstance(c, str) and c.strip():
-                        return c.strip()[:44]
-        except Exception: pass
-        return s.get("name", "Chat")[:44]
+        return session_title_from_file(s, USER_DATA_DIR / "sessions")
 
     @staticmethod
     def _format_date(ts: float) -> str:
@@ -751,7 +742,7 @@ class DanGUI(ctk.CTk):
     # ── Windows ───────────────────────────────────────────────────────────────
 
     def show_settings(self):
-        from api_config import load_config, save_config
+        from api_config import get_secret, load_config, save_config, set_secret
         cfg = load_config()
         win = _popup_base(self, "Settings", 520, 580)
         win.grid_columnconfigure(0, weight=1)
@@ -793,16 +784,15 @@ class DanGUI(ctk.CTk):
         _ent(6, ou)
 
         _sec(7, "ANTHROPIC API KEY")
-        ak = tk.StringVar(value=os.environ.get("ANTHROPIC_API_KEY_1","") or
-                          os.environ.get("ANTHROPIC_API_KEY",""))
+        ak = tk.StringVar(value=get_secret("anthropic.api_key") or os.environ.get("ANTHROPIC_API_KEY_1",""))
         _ent(8, ak, show="•", placeholder_text="sk-ant-...")
 
         _sec(9, "OPENAI API KEY")
-        ok_ = tk.StringVar(value=os.environ.get("OPENAI_API_KEY",""))
+        ok_ = tk.StringVar(value=get_secret("openai.api_key"))
         _ent(10, ok_, show="•", placeholder_text="sk-...")
 
         _sec(11, "VENICE API KEY")
-        vk = tk.StringVar(value=cfg.get("venice",{}).get("api_key",""))
+        vk = tk.StringVar(value=get_secret("venice.api_key"))
         _ent(12, vk, show="•", placeholder_text="venice-...")
 
         bot = ctk.CTkFrame(win, fg_color=SURFACE2, corner_radius=0,
@@ -818,8 +808,10 @@ class DanGUI(ctk.CTk):
             cfg["provider"] = pv.get()
             cfg.setdefault("ollama",{})["model"]    = om.get().strip()
             cfg.setdefault("ollama",{})["base_url"] = ou.get().strip()
-            cfg.setdefault("venice",{})["api_key"]  = vk.get().strip()
             save_config(cfg)
+            set_secret("anthropic.api_key", ak.get())
+            set_secret("openai.api_key", ok_.get())
+            set_secret("venice.api_key", vk.get())
             np_, nm_ = pv.get(), om.get().strip()
             try:
                 self.provider = get_provider(np_, nm_ if np_=="ollama" else self.model_name)
@@ -904,11 +896,6 @@ class DanGUI(ctk.CTk):
         br.grid(row=2, column=0, sticky="ew", padx=18, pady=(0,16))
 
         _cur = [None]
-        BASE = ("You are an expert in [TOPIC].\n\n"
-                "Your role is to:\n- [Task 1]\n- [Task 2]\n\n"
-                "Guidelines:\n- Be specific and practical\n"
-                "- Provide examples when helpful\n"
-                "- Ask for clarification when needed\n")
 
         def _refresh():
             for w in pl.winfo_children(): w.destroy()
@@ -931,14 +918,14 @@ class DanGUI(ctk.CTk):
             _cur[0] = fp
             editor.delete("1.0","end")
             if fp is None:
-                nv.set(""); editor.insert("1.0", BASE)
+                nv.set(""); editor.insert("1.0", DEFAULT_PROMPT_TEMPLATE)
             else:
                 nv.set(fp.stem); editor.insert("1.0", fp.read_text(encoding="utf-8"))
             _refresh()
 
         def _save():
             name = nv.get().strip()
-            safe = "".join(c for c in name if c.isalnum() or c in " _-").strip()
+            safe = sanitize_prompt_name(name)
             if not safe: return
             fp = PDIR / f"{safe}.txt"
             fp.write_text(editor.get("1.0","end-1c"), encoding="utf-8")

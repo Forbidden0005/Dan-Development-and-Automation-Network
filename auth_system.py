@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 from functools import wraps
 
+from config import USER_DATA_DIR
+
 logger = logging.getLogger(__name__)
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -28,8 +30,10 @@ AUTH_CONFIG = {
     "lockout_duration": 900,  # 15 minutes
     "require_auth": False,  # Set to False to disable auth (dev mode)
     "admin_override_key": os.getenv("DAN_ADMIN_OVERRIDE", ""),
-    "auth_database": Path("auth_data.json"),
-    "audit_log": Path("auth_audit.log")
+    "auth_database": USER_DATA_DIR / "auth_data.json",
+    "audit_log": USER_DATA_DIR / "auth_audit.log",
+    "salt_file": USER_DATA_DIR / "auth_salt.bin",
+    "bootstrap_admin_key_file": USER_DATA_DIR / "bootstrap_admin_key.txt",
 }
 
 # ── Data Models ─────────────────────────────────────────────────────────────
@@ -99,11 +103,33 @@ class AuthManager:
         self.users: Dict[str, User] = {}
         self.sessions: Dict[str, Session] = {}
         self.auth_attempts: List[AuthAttempt] = []
+        self._salt = self._load_or_create_salt()
         self._setup_audit_logging()
         self._load_auth_data()
-    
+
+    def _load_or_create_salt(self) -> bytes:
+        """Load a persistent auth salt or create one on first run."""
+        env_salt = os.getenv("DAN_AUTH_SALT", "").strip()
+        if env_salt:
+            return env_salt.encode("utf-8")
+
+        salt_path = AUTH_CONFIG["salt_file"]
+        salt_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if salt_path.exists():
+            return salt_path.read_bytes()
+
+        salt = secrets.token_bytes(32)
+        salt_path.write_bytes(salt)
+        try:
+            os.chmod(salt_path, 0o600)
+        except OSError:
+            pass
+        return salt
+
     def _setup_audit_logging(self):
         """Setup dedicated audit logging"""
+        AUTH_CONFIG["audit_log"].parent.mkdir(parents=True, exist_ok=True)
         audit_handler = logging.FileHandler(AUTH_CONFIG["audit_log"])
         audit_handler.setFormatter(logging.Formatter(
             '%(asctime)s [AUTH] %(levelname)s: %(message)s'
@@ -143,6 +169,7 @@ class AuthManager:
     def _save_auth_data(self):
         """Save users and sessions to persistent storage"""
         try:
+            AUTH_CONFIG["auth_database"].parent.mkdir(parents=True, exist_ok=True)
             data = {
                 "users": {username: asdict(user) for username, user in self.users.items()},
                 "sessions": {
@@ -170,24 +197,40 @@ class AuthManager:
         )
         self.users["admin"] = admin_user
         self._save_auth_data()
-        
+
+        bootstrap_file = AUTH_CONFIG["bootstrap_admin_key_file"]
+        bootstrap_file.parent.mkdir(parents=True, exist_ok=True)
+        bootstrap_file.write_text(
+            "\n".join(
+                [
+                    "DEFAULT ADMIN USER CREATED",
+                    "Username: admin",
+                    f"API Key: {admin_key}",
+                    "Roles: admin (full access)",
+                    "",
+                    "Store this key securely and remove this file after onboarding.",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        try:
+            os.chmod(bootstrap_file, 0o600)
+        except OSError:
+            pass
+
         print(f"\n{'='*60}")
         print("DEFAULT ADMIN USER CREATED")
         print(f"{'='*60}")
-        print(f"Username: admin")
-        print(f"API Key:  {admin_key}")
-        print(f"Roles:    admin (full access)")
-        print(f"\nSave this API key securely - it won't be shown again!")
-        print(f"Set environment variable: export DAN_API_KEY={admin_key}")
+        print("Username: admin")
+        print(f"Bootstrap file: {bootstrap_file}")
+        print("Store the key securely, then delete the bootstrap file.")
         print(f"{'='*60}\n")
-        
+
         self.audit_logger.info("Default admin user created")
     
     def _hash_api_key(self, api_key: str) -> str:
         """Hash API key for secure storage"""
-        salt = os.getenv("DAN_AUTH_SALT", "dan_ai_agent_salt_2024")
-        # Reduced iterations for performance (still secure)
-        return hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt.encode(), 10000).hex()
+        return hashlib.pbkdf2_hmac("sha256", api_key.encode(), self._salt, 100_000).hex()
     
     def _get_permissions_for_roles(self, roles: List[str]) -> Set[str]:
         """Get all permissions for given roles"""

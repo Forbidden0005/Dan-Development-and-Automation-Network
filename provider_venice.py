@@ -20,17 +20,16 @@ class VeniceProvider:
 
         if not api_key:
             try:
-                from api_config import load_config
-                cfg = load_config()
-                api_key = cfg.get("venice", {}).get("api_key", "")
+                from api_config import get_secret
+                api_key = get_secret("venice.api_key")
             except Exception:
                 pass
         if not api_key:
             api_key = os.environ.get("VENICE_API_KEY", "").strip()
         if not api_key:
             raise ValueError(
-                "No Venice API key found. Set VENICE_API_KEY env var, "
-                "or run /config set venice.api_key=YOUR_KEY"
+                "No Venice API key found. Set VENICE_API_KEY, "
+                "or load it in Settings or /config for the current session."
             )
         self._api_key = api_key
 

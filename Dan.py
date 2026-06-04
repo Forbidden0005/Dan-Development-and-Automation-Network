@@ -474,6 +474,38 @@ def print_banner(tool_count: int, provider_name: str, model: str,
 """)
 
 
+class StreamWriter:
+    """Buffers streamed chunks, suppresses JSON tool-call leaks, prints clean text."""
+
+    def __init__(self):
+        self._buf = ""
+        self._started = False
+        self._suppressed = False
+
+    def __call__(self, chunk: str) -> None:
+        self._buf += chunk
+        stripped = self._buf.lstrip()
+        if stripped.startswith("{"):
+            self._suppressed = True
+            return
+        self._suppressed = False
+        if not self._started:
+            print(Colors.CYAN, end="", flush=True)
+            self._started = True
+        print(chunk, end="", flush=True)
+
+    def reset(self) -> None:
+        self._buf = ""
+        self._started = False
+        self._suppressed = False
+
+    def finish(self) -> bool:
+        """Print RESET and newline. Returns True if anything was printed."""
+        if self._started:
+            print(Colors.RESET)
+        return self._started
+
+
 # ── REPL ─────────────────────────────────────────────────────────────────────
 
 def repl(provider: object, model: str, provider_name: str):
@@ -491,34 +523,7 @@ def repl(provider: object, model: str, provider_name: str):
 
     messages: list[dict] = []
 
-    class _StreamWriter:
-        """Buffers streamed chunks, suppresses JSON tool-call leaks, prints clean text."""
-        def __init__(self):
-            self._buf = ""
-            self._started = False
-            self._suppressed = False
-
-        def __call__(self, chunk: str) -> None:
-            self._buf += chunk
-            stripped = self._buf.lstrip()
-            # If the buffer looks like a JSON tool call, suppress it entirely
-            if stripped.startswith("{"):
-                self._suppressed = True
-                return
-            self._suppressed = False
-            # Print CYAN once before the first real character
-            if not self._started:
-                print(Colors.CYAN, end="", flush=True)
-                self._started = True
-            print(chunk, end="", flush=True)
-
-        def finish(self) -> bool:
-            """Print RESET and newline. Returns True if anything was printed."""
-            if self._started:
-                print(Colors.RESET)
-            return self._started
-
-    stream_cb = _StreamWriter() if supports_stream else None
+    stream_cb = StreamWriter() if supports_stream else None
     progress  = ProgressDisplay()
     esc       = EscapeListener()
 
@@ -567,9 +572,7 @@ def repl(provider: object, model: str, provider_name: str):
         # Run agent loop
         print()
         if stream_cb:
-            stream_cb._buf = ""
-            stream_cb._started = False
-            stream_cb._suppressed = False
+            stream_cb.reset()
         esc.arm()
         try:
             response, messages = run_agent_loop(
