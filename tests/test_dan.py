@@ -320,6 +320,28 @@ class TestProviders:
         assert provider is not None
         assert getattr(provider, "model", "") == "test-model"
 
+    def test_provider_facade_exports_provider_classes(self):
+        from providers import AnthropicProvider, OllamaProvider, OpenAIProvider, VeniceProvider
+
+        assert AnthropicProvider.__name__ == "AnthropicProvider"
+        assert OpenAIProvider.__name__ == "OpenAIProvider"
+        assert OllamaProvider.__name__ == "OllamaProvider"
+        assert VeniceProvider.__name__ == "VeniceProvider"
+
+    def test_key_rotator_uses_fallback_key(self, monkeypatch):
+        from providers import KeyRotator
+
+        monkeypatch.delenv("TEST_PROVIDER_1", raising=False)
+        monkeypatch.setenv("TEST_PROVIDER", "demo-key")
+
+        rotator = KeyRotator("TEST_PROVIDER")
+
+        key, index = rotator.next()
+
+        assert key == "demo-key"
+        assert index == 0
+        assert rotator.count == 1
+
 
 class TestWorkersMore:
     def test_spawn_tracks_completed_tasks(self):
@@ -400,6 +422,18 @@ class TestDanGuiSupport:
         assert format_relative_date(now - 120, now=now) == "2m ago"
         assert format_relative_date(now - 3_600, now=now) == "Today"
         assert format_relative_date(now - 90_000, now=now) == "Yesterday"
+
+
+class TestDanGuiComponents:
+    def test_components_module_exports_reusable_widgets(self):
+        from dan_gui_components import GradientStrip, LiveBubble, ThinkingDots, button, label, popup_base
+
+        assert callable(popup_base)
+        assert callable(label)
+        assert callable(button)
+        assert ThinkingDots.__name__ == "ThinkingDots"
+        assert GradientStrip.__name__ == "GradientStrip"
+        assert LiveBubble.__name__ == "LiveBubble"
 
 
 # -- Structured Execution Security Tests -------------------------------------

@@ -17,6 +17,13 @@ import tkinter as tk
 from tkinter import filedialog
 
 from config import APP_NAME, APP_VERSION, USER_DATA_DIR
+from dan_gui_components import (
+    GradientStrip as ComponentGradientStrip,
+    LiveBubble as ComponentLiveBubble,
+    button as component_button,
+    label as component_label,
+    popup_base as component_popup_base,
+)
 from dan_gui_support import (
     estimate_tokens,
     format_relative_date,
@@ -69,26 +76,23 @@ SIDEBAR_W   = 272
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _popup_base(parent, title: str, w: int, h: int) -> ctk.CTkToplevel:
-    win = ctk.CTkToplevel(parent)
-    win.title(title)
-    win.geometry(f"{w}x{h}")
-    win.configure(fg_color=SURFACE)
-    win.transient(parent)
-    win.grab_set()
-    win.after(50, lambda: (win.lift(), win.focus_force()))
-    return win
+    return component_popup_base(parent, title, w, h, SURFACE)
 
 def _label(parent, text, size=13, weight="normal", color=TEXT, **kw):
-    return ctk.CTkLabel(parent, text=text, text_color=color,
-                        font=ctk.CTkFont(family="Segoe UI", size=size, weight=weight), **kw)
+    return component_label(parent, text, color, size=size, weight=weight, **kw)
 
 def _btn(parent, text, command, w=None, h=36, fg=CARD, hov=CARD_HOV, radius=10, **kw):
-    props = dict(height=h, fg_color=fg, hover_color=hov, corner_radius=radius,
-                 font=ctk.CTkFont(family="Segoe UI", size=13))
-    props.update(kw)
-    if w:
-        props["width"] = w
-    return ctk.CTkButton(parent, text=text, command=command, **props)
+    return component_button(
+        parent,
+        text,
+        command,
+        fg,
+        hov,
+        width=w,
+        height=h,
+        radius=radius,
+        **kw,
+    )
 
 def _ts() -> str:
     """Current time as short string for message timestamps."""
@@ -100,157 +104,23 @@ def _est_tokens(messages: list) -> int:
 
 # ── Animated thinking dots ─────────────────────────────────────────────────────
 
-class ThinkingDots(ctk.CTkFrame):
-    _SEQ = [
-        ["#9060f5", "#4a1a9e", "#2a0a6e"],
-        ["#4a1a9e", "#9060f5", "#4a1a9e"],
-        ["#2a0a6e", "#4a1a9e", "#9060f5"],
-    ]
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent", height=20)
-        self._active = False; self._step = 0; self._dots = []
-        for i in range(3):
-            lbl = ctk.CTkLabel(self, text="●", width=14, height=14,
-                               fg_color="transparent",
-                               font=ctk.CTkFont(size=11),
-                               text_color=self._SEQ[0][i])
-            lbl.grid(row=0, column=i, padx=2)
-            self._dots.append(lbl)
-    def start(self):
-        self._active = True; self._tick()
-    def stop(self):
-        self._active = False
-    def _tick(self):
-        if not self._active: return
-        for dot, col in zip(self._dots, self._SEQ[self._step % 3]):
-            dot.configure(text_color=col)
-        self._step += 1
-        self.after(320, self._tick)
-
-
-# ── Gradient accent strip ──────────────────────────────────────────────────────
-
-class GradientStrip(tk.Canvas):
+class GradientStrip(ComponentGradientStrip):
     def __init__(self, parent, h=2, c1="#7c3aed", c2="#4338ca", **kw):
-        super().__init__(parent, height=h, bd=0, highlightthickness=0, **kw)
-        self._c1, self._c2, self._h = c1, c2, h
-        self.bind("<Configure>", self._draw)
-    def _draw(self, _=None):
-        w = self.winfo_width() or 1
-        self.delete("all")
-        r1, g1, b1 = self.winfo_rgb(self._c1)
-        r2, g2, b2 = self.winfo_rgb(self._c2)
-        for x in range(w):
-            t = x / w
-            r = int((r1+(r2-r1)*t)/256); g = int((g1+(g2-g1)*t)/256); b = int((b1+(b2-b1)*t)/256)
-            self.create_line(x, 0, x, self._h, fill=f"#{r:02x}{g:02x}{b:02x}")
+        super().__init__(parent, color_one=c1, color_two=c2, height=h, **kw)
 
 
-# ── Live streaming bubble ──────────────────────────────────────────────────────
-
-class LiveBubble:
+class LiveBubble(ComponentLiveBubble):
     def __init__(self, parent):
-        self.outer = ctk.CTkFrame(parent, fg_color="transparent")
-        self.outer.grid(sticky="ew", pady=(0, 4))
-        self.outer.grid_columnconfigure(1, weight=1)
-        self.outer.grid_columnconfigure(2, minsize=80, weight=0)  # right spacer
-
-        # Avatar
-        av = ctk.CTkFrame(self.outer, width=36, height=36,
-                          fg_color=PURPLE_DIM, corner_radius=18)
-        av.grid(row=0, column=0, padx=(0, 10), sticky="n", pady=(4, 0))
-        av.grid_propagate(False)
-        ctk.CTkLabel(av, text="◈", width=36, height=36, fg_color="transparent",
-                     font=ctk.CTkFont(size=16), text_color="#c4b5fd"
-                     ).place(relx=.5, rely=.5, anchor="center")
-
-        self.bubble = ctk.CTkFrame(self.outer, fg_color=ASST_BG,
-                                   corner_radius=14, border_width=1, border_color=BORDER)
-        self.bubble.grid(row=0, column=1, sticky="ew")
-        self.bubble.grid_columnconfigure(0, weight=1)
-
-        self._dots = ThinkingDots(self.bubble)
-        self._dots.grid(row=0, column=0, padx=14, pady=12, sticky="w")
-        self._dots.start()
-
-        self.textbox = ctk.CTkTextbox(
-            self.bubble, fg_color="transparent", border_width=0,
-            corner_radius=0, wrap="word", height=40,
-            font=ctk.CTkFont(family="Segoe UI", size=14),
-            activate_scrollbars=False)
-        self._t = self.textbox._textbox
-        self._t.tag_configure("tool",   foreground=TOOL_C,  font=("Segoe UI", 12))
-        self._t.tag_configure("normal", foreground=TEXT,    font=("Segoe UI", 14))
-
-        self._streaming = False
-        self._has_content = False
-        self._full_text = ""
-
-    def set_status(self, _=None): pass
-
-    def add_tool_line(self, text: str):
-        self._ensure_textbox()
-        self.textbox.configure(state="normal")
-        self._t.insert("end", text + "\n", "tool")
-        self._fit(); self.textbox.see("end")
-        self.textbox.configure(state="disabled")
-
-    def append_text(self, chunk: str):
-        self._ensure_textbox()
-        self._full_text += chunk
-        if not self._streaming:
-            self._streaming = True
-            if self._has_content:
-                self.textbox.configure(state="normal")
-                self._t.insert("end", "\n", "normal")
-                self.textbox.configure(state="disabled")
-        self.textbox.configure(state="normal")
-        self._t.insert("end", chunk, "normal")
-        self._fit(); self.textbox.see("end")
-        self.textbox.configure(state="disabled")
-
-    def finish(self, fallback: str = ""):
-        self._dots.stop()
-        if not self._has_content and fallback:
-            self._ensure_textbox()
-            self._full_text = fallback
-            self.textbox.configure(state="normal")
-            self._t.insert("end", fallback, "normal")
-            self.textbox.configure(state="disabled")
-        self._fit()
-        # Add copy button after content is final
-        self._add_copy_btn()
-
-    def _ensure_textbox(self):
-        if not self._has_content:
-            self._dots.stop()
-            try: self._dots.grid_remove()
-            except Exception: pass
-            self._has_content = True
-            self.textbox.grid(row=0, column=0, sticky="ew", padx=4, pady=8)
-
-    def _fit(self):
-        try:
-            lines = int(self.textbox.index("end-1c").split(".")[0])
-            self.textbox.configure(height=min(max(lines * 22 + 16, 50), 700))
-        except Exception: pass
-
-    def _add_copy_btn(self):
-        try:
-            txt = self._full_text.strip() or self.textbox.get("1.0", "end-1c").strip()
-            if not txt: return
-            cb = ctk.CTkButton(
-                self.bubble, text="⎘", width=28, height=24,
-                fg_color="transparent", hover_color=CARD_HOV,
-                text_color=TEXT3, corner_radius=6,
-                font=ctk.CTkFont(size=11),
-                command=lambda t=txt: (self.bubble.winfo_toplevel().clipboard_clear(),
-                                       self.bubble.winfo_toplevel().clipboard_append(t)))
-            cb.place(relx=1.0, rely=0.0, anchor="ne", x=-6, y=6)
-            cb.lower()
-            self.bubble.bind("<Enter>", lambda e: cb.lift())
-            self.bubble.bind("<Leave>", lambda e: cb.lower())
-        except Exception: pass
+        super().__init__(
+            parent,
+            assistant_bg=ASST_BG,
+            border_color=BORDER,
+            purple_dim=PURPLE_DIM,
+            card_hover=CARD_HOV,
+            text_color=TEXT,
+            muted_text_color=TEXT3,
+            tool_color=TOOL_C,
+        )
 
 
 # ── Main application ───────────────────────────────────────────────────────────

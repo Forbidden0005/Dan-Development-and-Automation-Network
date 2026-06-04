@@ -71,7 +71,7 @@ class ThinkingDots(ctk.CTkFrame):
         for i in range(3):
             dot = ctk.CTkLabel(
                 self,
-                text="o",
+                text="●",
                 width=14,
                 height=14,
                 fg_color="transparent",
@@ -148,7 +148,7 @@ class LiveBubble:
         avatar.grid_propagate(False)
         ctk.CTkLabel(
             avatar,
-            text="*",
+            text="◈",
             width=36,
             height=36,
             fg_color="transparent",
@@ -249,8 +249,8 @@ class LiveBubble:
                 return
             copy_button = ctk.CTkButton(
                 self.bubble,
-                text="Copy",
-                width=44,
+                text="⎘",
+                width=28,
                 height=24,
                 fg_color="transparent",
                 hover_color=self._card_hover,
