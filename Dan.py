@@ -389,10 +389,7 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
         elif sub_cmd == "delete":
             if not sub_arg:
                 return "Usage: /session delete <name>"
-            from config import USER_DATA_DIR
-            fp = USER_DATA_DIR / "sessions" / f"{sub_arg}.json"
-            if fp.exists():
-                fp.unlink()
+            if session_mgr.delete(sub_arg):
                 return f"✓ Deleted session: {sub_arg}"
             return f"Session not found: {sub_arg}"
 

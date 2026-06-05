@@ -668,6 +668,20 @@ class TestSessionManager:
         assert session_mgr.load("../outside") is None
         assert session_mgr.load(str(outside)) is None
 
+    def test_delete_rejects_path_traversal(self, monkeypatch, tmp_path):
+        import session_mgr
+
+        outside = tmp_path / "outside.json"
+        outside.write_text('{"messages": [{"role": "user", "content": "outside"}]}', encoding="utf-8")
+        monkeypatch.setattr(session_mgr, "SESSIONS_DIR", tmp_path / "sessions")
+        session_mgr.save([{"role": "user", "content": "saved"}], "ollama", "qwen", name="named", session_id="1")
+
+        assert session_mgr.delete("../outside") is False
+        assert session_mgr.delete(str(outside)) is False
+        assert outside.exists()
+        assert session_mgr.delete("named") is True
+        assert session_mgr.load("named") is None
+
     def test_auto_save_skips_empty_messages(self, monkeypatch, tmp_path):
         import session_mgr
 

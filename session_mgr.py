@@ -117,6 +117,31 @@ def load(name: str) -> tuple[list[dict], dict] | None:
     return None
 
 
+def delete(name: str) -> bool:
+    """Delete a saved session by safe name.
+
+    Auto-save files are intentionally not matched here; this mirrors the user-facing
+    saved-session list and avoids deleting hidden recovery state by a loose stem.
+    """
+    d = _dir().resolve()
+    stem = _safe_session_stem(name)
+    if not stem:
+        return False
+
+    fp = d / f"{stem}.json"
+    try:
+        resolved = fp.resolve()
+        resolved.relative_to(d)
+    except ValueError:
+        return False
+
+    if not resolved.exists():
+        return False
+
+    resolved.unlink()
+    return True
+
+
 # ── List ──────────────────────────────────────────────────────────────────────
 
 def list_sessions(include_auto: bool = False) -> list[dict]:
