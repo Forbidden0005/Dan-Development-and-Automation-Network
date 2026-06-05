@@ -125,6 +125,22 @@ class TestCoreTools:
         result = run_bash("echo hello")
         assert "hello" in result
 
+    def test_bash_honors_timeout_argument(self, monkeypatch):
+        import tools
+
+        captured = {}
+        old_timeout = tools._command_executor.max_execution_time
+
+        def fake_execute(command, cwd=None):
+            captured["timeout"] = tools._command_executor.max_execution_time
+            return "ok"
+
+        monkeypatch.setattr(tools._command_executor, "execute_command", fake_execute)
+
+        assert tools.run_bash("echo hello", timeout=7) == "ok"
+        assert captured["timeout"] == 7
+        assert tools._command_executor.max_execution_time == old_timeout
+
     def test_bash_timeout(self):
         from tools import run_bash
         # Override the executor timeout for this test
@@ -157,6 +173,16 @@ class TestCoreTools:
         result = grep_search("hello", self.tmpdir)
         assert "hello" in result
 
+    def test_grep_security_error_is_reported(self):
+        import tools
+        from tools import grep_search
+
+        tools._path_validator = tools.SecurePathValidator(allowed_roots=[self.tmpdir])
+
+        result = grep_search("hello", "../outside")
+
+        assert "Security error" in result
+
     def test_list_dir(self):
         from tools import list_directory
         (Path(self.tmpdir) / "file.txt").touch()
@@ -164,6 +190,16 @@ class TestCoreTools:
         result = list_directory(self.tmpdir)
         assert "file.txt" in result
         assert "sub/" in result
+
+    def test_list_dir_security_error_is_reported(self):
+        import tools
+        from tools import list_directory
+
+        tools._path_validator = tools.SecurePathValidator(allowed_roots=[self.tmpdir])
+
+        result = list_directory("../outside")
+
+        assert "Security error" in result
 
 
 # ── Knowledge Tests ──────────────────────────────────────────────────────────

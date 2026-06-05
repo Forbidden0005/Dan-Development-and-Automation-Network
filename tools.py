@@ -189,9 +189,13 @@ def run_bash(command: str, timeout: int = 30) -> str:
     try:
         # Sanitize input
         command = sanitize_user_input(command, max_length=1000)
-        
-        # Use secure command executor
-        result = _command_executor.execute_command(command, cwd=os.getcwd())
+
+        old_timeout = _command_executor.max_execution_time
+        _command_executor.max_execution_time = max(1, min(int(timeout), 300))
+        try:
+            result = _command_executor.execute_command(command, cwd=os.getcwd())
+        finally:
+            _command_executor.max_execution_time = old_timeout
         logger.info("Command executed successfully: %s", command[:50])
         return result
         
@@ -238,14 +242,20 @@ def glob_files(pattern: str, path: str = ".") -> str:
 
 def grep_search(pattern: str, path: str = ".", include: str = "") -> str:
     """Search for a regex pattern in files."""
-    root = _safe_path(path)
-    if not root.exists():
-        return f"Error: Path not found: {path}"
-
     try:
+        pattern = sanitize_user_input(pattern, max_length=500)
+        path = sanitize_user_input(path, max_length=500)
+        include = sanitize_user_input(include, max_length=100)
+
+        root = _safe_path(path)
+        if not root.exists():
+            return f"Error: Path not found: {path}"
+
         regex = re.compile(pattern, re.IGNORECASE)
     except re.error as e:
         return f"Error: Invalid regex: {e}"
+    except ValueError as e:
+        return f"Security error: {e}"
 
     results: list[str] = []
     skip = {".git", "__pycache__", "node_modules", ".venv"}
@@ -272,7 +282,12 @@ def grep_search(pattern: str, path: str = ".", include: str = "") -> str:
 
 def list_directory(path: str = ".") -> str:
     """List directory contents with tree view."""
-    root = _safe_path(path)
+    try:
+        path = sanitize_user_input(path, max_length=500)
+        root = _safe_path(path)
+    except ValueError as e:
+        return f"Security error: {e}"
+
     if not root.exists():
         return f"Error: Path not found: {path}"
     if not root.is_dir():

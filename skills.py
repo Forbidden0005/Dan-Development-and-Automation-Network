@@ -73,7 +73,7 @@ SCAFFOLDS = {
         "files": {
             "src/__init__.py": "",
             "tests/__init__.py": "",
-            "tests/test_main.py": '"""Tests."""\n\nimport pytest\n\n\ndef test_placeholder():\n    assert True\n',
+            "tests/test_main.py": '"""Smoke tests for the generated package."""\n\nimport importlib\n\n\ndef test_project_package_imports():\n    assert importlib.import_module("src") is not None\n',
             "README.md": "# {name}\n\n## Setup\n\n```bash\npip install -r requirements.txt\n```\n\n## Usage\n\n```bash\npython -m src\n```\n",
             "requirements.txt": "",
             ".gitignore": "__pycache__/\n*.pyc\n.venv/\n.env\ndist/\n*.egg-info/\n",
