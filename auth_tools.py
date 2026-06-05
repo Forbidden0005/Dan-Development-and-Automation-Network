@@ -16,7 +16,15 @@ def login_user(api_key: str) -> str:
         session = auth_manager.authenticate(api_key)
         
         if session:
-            return f"Successfully authenticated as {session.username} with roles: {auth_manager.users[session.username].roles}"
+            user = auth_manager.users.get(session.username)
+            if user:
+                return f"Successfully authenticated as {session.username} with roles: {user.roles}"
+
+            permissions = sorted(getattr(session, "permissions", []))
+            return (
+                f"Successfully authenticated as {session.username} "
+                f"with session permissions: {permissions}"
+            )
         else:
             return "Authentication failed: Invalid API key"
             

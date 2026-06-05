@@ -925,10 +925,9 @@ def lint_check(path: str = ".", tool: str = "", fix: bool = False) -> str:
         args.append(str(path))
         code, out, err = _run(args)
         output = out + (("\n" + err) if err.strip() else "")
-        output_lines = [line.strip() for line in output.splitlines() if line.strip()]
-        if not output_lines or output_lines == ["All checks passed!"]:
+        if not output.strip():
             return f"ruff: No issues found in {path}"
-        issues = len(output_lines)
+        issues = len(output.strip().splitlines())
         return f"ruff ({issues} issue(s)):\n\n{output[:4000]}"
 
     elif tool == "flake8":

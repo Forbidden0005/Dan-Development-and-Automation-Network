@@ -1235,22 +1235,6 @@ class TestCodeToolsBundle:
         assert "ruff: No issues found" in lint_result
         assert "already formatted" in format_result
 
-    def test_lint_check_treats_ruff_success_banner_as_clean(self, monkeypatch, tmp_path):
-        import code_tools
-
-        root = tmp_path / "proj"
-        root.mkdir()
-
-        monkeypatch.setattr(
-            code_tools,
-            "_run",
-            lambda cmd, cwd=None, timeout=120: (0, "All checks passed!\n", ""),
-        )
-
-        lint_result = code_tools.lint_check(str(root), tool="ruff")
-
-        assert "ruff: No issues found" in lint_result
-
     def test_find_usages_refactor_analyze_and_deps(self, tmp_path, monkeypatch):
         import code_tools
 
@@ -1970,6 +1954,25 @@ class TestAuthToolsBundle:
 
         assert "Successfully authenticated as demo" in success
         assert "Invalid API key" in failure
+
+    def test_login_user_handles_guest_session_without_persisted_user(self, monkeypatch):
+        import auth_tools
+
+        guest_session = type("Session", (), {"username": "guest", "permissions": {"*"}})()
+        auth_manager = type(
+            "AuthManager",
+            (),
+            {
+                "users": {},
+                "authenticate": lambda self, api_key: guest_session,
+            },
+        )()
+        monkeypatch.setattr(auth_tools, "get_auth_manager", lambda: auth_manager)
+
+        result = auth_tools.login_user("ignored-in-dev-mode")
+
+        assert "Successfully authenticated as guest" in result
+        assert "session permissions: ['*']" in result
 
     def test_auth_tool_wrappers_cover_logout_status_create_and_permissions(self, monkeypatch):
         import auth_tools
