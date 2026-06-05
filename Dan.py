@@ -53,7 +53,6 @@ def _save_checkpoint(user_input: str, messages: list[dict]) -> None:
     try:
         _CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
-        utf8 = __import__("codecs").lookup("utf-8").incrementalencoder
         _CHECKPOINT_FILE.write_text(
             _json.dumps({"user_input": user_input, "messages": messages}, indent=2),
             encoding="utf-8",

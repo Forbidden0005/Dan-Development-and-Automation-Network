@@ -27,6 +27,7 @@ _PROVIDER_RUNTIME_REQUIREMENTS = {
     "venice": ["openai"],
     "ollama": ["httpx"],
 }
+_OPTIONAL_RUNTIME_PACKAGES = {"aiofiles", "ddgs"}
 _STARTUP_TARGET_IMPORTS = {
     "cli": [],
     "gui": ["customtkinter", "tkinter"],
@@ -320,6 +321,69 @@ def _partition_missing_dependencies(
     return runtime_missing, dev_missing, optional_missing
 
 
+def _group_missing_by_source(
+    missing: list[tuple[str, str]]
+) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for pkg, source in missing:
+        grouped.setdefault(source, []).append(pkg)
+    return grouped
+
+
+def _classify_runtime_missing(
+    runtime_missing: list[tuple[str, str]],
+    active_provider: str,
+    startup_target: str,
+) -> tuple[
+    list[tuple[str, str]],
+    dict[str, list[tuple[str, str]]],
+    list[tuple[str, str]],
+]:
+    startup_required = {
+        pkg.lower() for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
+    }
+    startup_required.update(
+        pkg.lower() for pkg in _STARTUP_TARGET_PACKAGES.get(startup_target, [])
+    )
+
+    other_provider_packages = {
+        pkg.lower()
+        for provider_name, packages in _PROVIDER_RUNTIME_REQUIREMENTS.items()
+        if provider_name != active_provider
+        for pkg in packages
+    }
+    gui_only_packages = {
+        pkg.lower()
+        for pkg in _STARTUP_TARGET_PACKAGES.get("gui", [])
+        if startup_target != "gui"
+    }
+
+    startup_runtime_missing: list[tuple[str, str]] = []
+    feature_scoped_runtime_missing: dict[str, list[tuple[str, str]]] = {}
+    general_runtime_missing: list[tuple[str, str]] = []
+
+    for pkg, source in runtime_missing:
+        normalized = pkg.lower()
+        if normalized in startup_required:
+            startup_runtime_missing.append((pkg, source))
+        elif normalized in other_provider_packages:
+            feature_scoped_runtime_missing.setdefault(
+                "Inactive provider SDKs", []
+            ).append((pkg, source))
+        elif normalized in gui_only_packages:
+            feature_scoped_runtime_missing.setdefault(
+                "GUI-only packages", []
+            ).append((pkg, source))
+        elif normalized in _OPTIONAL_RUNTIME_PACKAGES:
+            feature_scoped_runtime_missing.setdefault(
+                "Optional runtime accelerators", []
+            ).append((pkg, source))
+        else:
+            general_runtime_missing.append((pkg, source))
+
+    return startup_runtime_missing, feature_scoped_runtime_missing, general_runtime_missing
+
+
 def _has_provider_credentials(active_provider: str) -> bool:
     if active_provider == "anthropic":
         for env_name, _ in _PROVIDER_KEY_HINTS["anthropic"]:
@@ -376,6 +440,9 @@ def _collect_environment_diagnostics(
     installed, missing = _check_declared_dependencies(root)
     undeclared = _find_undeclared_dependencies(root)
     runtime_missing, dev_missing, optional_missing = _partition_missing_dependencies(missing)
+    startup_runtime_missing, feature_scoped_runtime_missing, general_runtime_missing = (
+        _classify_runtime_missing(runtime_missing, active_provider, startup_target)
+    )
     runtime_missing_map = {pkg.lower(): (pkg, source) for pkg, source in runtime_missing}
     provider_missing = [
         pkg for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
@@ -385,17 +452,6 @@ def _collect_environment_diagnostics(
         module for module in _STARTUP_TARGET_IMPORTS[startup_target]
         if importlib.util.find_spec(module) is None
     ]
-    startup_runtime_missing = []
-    for pkg in _STARTUP_TARGET_PACKAGES.get(startup_target, []):
-        missing_entry = runtime_missing_map.get(pkg.lower())
-        if missing_entry is not None:
-            startup_runtime_missing.append(missing_entry)
-    for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, []):
-        missing_entry = runtime_missing_map.get(pkg.lower())
-        if missing_entry is not None:
-            startup_runtime_missing.append(missing_entry)
-    startup_runtime_missing = list(dict.fromkeys(startup_runtime_missing))
-
     python_cmd = " ".join(_python_cmd())
     has_tests = (
         (root / "tests").exists()
@@ -427,6 +483,14 @@ def _collect_environment_diagnostics(
             "Startup-critical runtime dependencies are missing: "
             + ", ".join(pkg for pkg, _ in startup_runtime_missing[:8])
             + (" ..." if len(startup_runtime_missing) > 8 else "")
+        )
+
+    runtime_advisory_targets = startup_runtime_missing + general_runtime_missing
+    if runtime_advisory_targets:
+        advisories.append(
+            "Runtime dependencies are missing: "
+            + ", ".join(pkg for pkg, _ in runtime_advisory_targets[:8])
+            + (" ..." if len(runtime_advisory_targets) > 8 else "")
         )
 
     if startup_target == "gui" and target_missing:
@@ -473,6 +537,11 @@ def _collect_environment_diagnostics(
             f"Optional feature packages not installed: {len(optional_missing)} "
             "(ML and vision tools remain unavailable until installed)."
         )
+    if feature_scoped_runtime_missing:
+        notes.append(
+            "Feature-scoped runtime packages are missing, but they are not required "
+            f"for the active {startup_target} startup path."
+        )
 
     return {
         "root": root,
@@ -482,6 +551,8 @@ def _collect_environment_diagnostics(
         "missing": missing,
         "runtime_missing": runtime_missing,
         "startup_runtime_missing": startup_runtime_missing,
+        "feature_scoped_runtime_missing": feature_scoped_runtime_missing,
+        "general_runtime_missing": general_runtime_missing,
         "dev_missing": dev_missing,
         "optional_missing": optional_missing,
         "undeclared": undeclared,
@@ -511,6 +582,7 @@ def startup_doctor(path: str = ".", provider: str = "", target: str = "cli") -> 
     blockers = diagnostics["blockers"]
     advisories = diagnostics["advisories"]
     runtime_missing = diagnostics["runtime_missing"]
+    feature_scoped_runtime_missing = diagnostics["feature_scoped_runtime_missing"]
     dev_missing = diagnostics["dev_missing"]
     undeclared = diagnostics["undeclared"]
     notes = diagnostics["notes"]
@@ -544,6 +616,13 @@ def startup_doctor(path: str = ".", provider: str = "", target: str = "cli") -> 
         lines.append("\nMissing runtime packages:")
         for pkg, source in runtime_missing[:20]:
             lines.append(f"  - {pkg}  ({source})")
+
+    if feature_scoped_runtime_missing:
+        lines.append("\nFeature-scoped runtime packages:")
+        for scope, packages in feature_scoped_runtime_missing.items():
+            lines.append(f"  {scope}:")
+            for pkg, source in packages[:20]:
+                lines.append(f"    - {pkg}  ({source})")
 
     if dev_missing:
         lines.append("\nMissing development packages:")
@@ -583,6 +662,9 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
     installed = diagnostics["installed"]
     missing = diagnostics["missing"]
     runtime_missing = diagnostics["runtime_missing"]
+    startup_runtime_missing = diagnostics["startup_runtime_missing"]
+    feature_scoped_runtime_missing = diagnostics["feature_scoped_runtime_missing"]
+    general_runtime_missing = diagnostics["general_runtime_missing"]
     dev_missing = diagnostics["dev_missing"]
     optional_missing = diagnostics["optional_missing"]
     undeclared = diagnostics["undeclared"]
@@ -623,6 +705,13 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
         for pkg, source in runtime_missing[:20]:
             lines.append(f"  - {pkg}  ({source})")
 
+    if feature_scoped_runtime_missing:
+        lines.append("\nFeature-scoped runtime packages:")
+        for scope, packages in feature_scoped_runtime_missing.items():
+            lines.append(f"  {scope}:")
+            for pkg, source in packages[:20]:
+                lines.append(f"    - {pkg}  ({source})")
+
     if dev_missing:
         lines.append("\nMissing development packages:")
         for pkg, source in dev_missing[:20]:
@@ -638,7 +727,8 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
         lines.append(f"  - {note}")
 
     if runtime_missing or provider_missing or blockers:
-        runtime_install_targets = [pkg for pkg, _ in runtime_missing]
+        runtime_install_targets = [pkg for pkg, _ in startup_runtime_missing]
+        runtime_install_targets.extend(pkg for pkg, _ in general_runtime_missing)
         provider_install_targets = [
             pkg for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
             if pkg.lower() not in {name.lower() for name in runtime_install_targets}
@@ -650,6 +740,11 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
                 "\nSuggested runtime fix:\n"
                 f"  {python_cmd} -m pip install {' '.join(deduped_runtime_targets)}"
             )
+        if feature_scoped_runtime_missing:
+            lines.append("\nInstall feature-scoped packages only when needed:")
+            for scope, packages in feature_scoped_runtime_missing.items():
+                install_targets = " ".join(pkg for pkg, _ in packages)
+                lines.append(f"  - {scope}: {python_cmd} -m pip install {install_targets}")
         if has_tests and not pytest_available:
             lines.append(
                 f"  Install test tooling: {python_cmd} -m pip install pytest pytest-cov"
@@ -1212,23 +1307,50 @@ def check_deps(path: str = ".") -> str:
                 "Looked for: requirements.txt, requirements-dev.txt, requirements-core.txt, pyproject.toml")
     installed, missing = _check_declared_dependencies(root)
     undeclared = _find_undeclared_dependencies(root)
+    runtime_missing, dev_missing, optional_missing = _partition_missing_dependencies(missing)
+    optional_missing_by_source = _group_missing_by_source(optional_missing)
+    python_cmd = " ".join(_python_cmd())
 
     lines = [
         f"Dependency Check ({root.name})",
         f"  Installed: {len(installed)}",
         f"  Missing:   {len(missing)}",
+        f"  Runtime missing: {len(runtime_missing)}",
+        f"  Dev missing:     {len(dev_missing)}",
+        f"  Optional missing:{len(optional_missing)}",
         f"  Undeclared imports: {len(undeclared)}",
     ]
 
-    if missing:
-        lines.append(f"\nMissing packages:")
-        for pkg, src in missing:
+    if runtime_missing:
+        lines.append("\nMissing runtime packages:")
+        for pkg, src in runtime_missing:
             lines.append(f"  x  {pkg}  (from {src})")
         lines.append(
-            f"\nInstall with: {' '.join(_python_cmd())} -m pip install {' '.join(p for p, _ in missing)}"
+            f"\nInstall runtime with: {python_cmd} -m pip install {' '.join(p for p, _ in runtime_missing)}"
         )
     else:
-        lines.append("\nAll dependencies are installed.")
+        lines.append("\nRuntime dependencies are installed.")
+
+    if dev_missing:
+        lines.append("\nMissing development packages:")
+        for pkg, src in dev_missing:
+            lines.append(f"  x  {pkg}  (from {src})")
+        lines.append(
+            f"\nInstall dev tooling with: {python_cmd} -m pip install -r requirements-dev.txt"
+        )
+
+    if optional_missing:
+        lines.append("\nMissing optional feature packages:")
+        for pkg, src in optional_missing:
+            lines.append(f"  x  {pkg}  (from {src})")
+        lines.append("\nOptional feature bundles:")
+        for source in optional_missing_by_source:
+            lines.append(
+                f"  - {source}: {python_cmd} -m pip install -r {source}"
+            )
+    else:
+        if not runtime_missing and not dev_missing:
+            lines.append("\nAll declared dependencies are installed.")
 
     if undeclared:
         lines.append("\nImported but undeclared packages:")

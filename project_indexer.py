@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -23,7 +24,6 @@ SKIP_EXTS = {
     ".mp3", ".mp4", ".wav", ".avi", ".mov",
     ".pdf", ".zip", ".tar", ".gz", ".rar", ".7z",
     ".woff", ".woff2", ".ttf", ".eot",
-    ".min.js", ".min.css",
 }
 
 ENTRY_NAMES = {
@@ -79,9 +79,9 @@ class FileInfo:
             extra = f"+{len(self.functions)-6}" if len(self.functions) > 6 else ""
             parts.append(", ".join(shown) + extra + "()")
         if self.imports:
-            parts.append("← " + ", ".join(self.imports[:4]))
+            parts.append("<- " + ", ".join(self.imports[:4]))
         detail = "  [" + " | ".join(parts) + "]" if parts else ""
-        star = " ★" if self.is_entry else ""
+        star = " *" if self.is_entry else ""
         return f"{Path(self.rel_path).name}{star}  {self.line_count}L{detail}"
 
 
@@ -101,13 +101,13 @@ class ProjectMap:
             sorted(self.languages.items(), key=lambda item: -item[1])[:5]
         )
         return (
-            f"✓ Loaded: {self.display_name}  "
-            f"({self.total_files} files · {lang_str})  "
+            f"Loaded: {self.display_name}  "
+            f"({self.total_files} files | {lang_str})  "
             f"[{self.scan_secs:.1f}s]"
         )
 
     def to_prompt(self) -> str:
-        lang_str = " · ".join(
+        lang_str = " | ".join(
             f"{count} {language}" for language, count in
             sorted(self.languages.items(), key=lambda item: -item[1])[:6]
         )
@@ -118,8 +118,8 @@ class ProjectMap:
             f"STACK:   {lang_str}",
             f"FILES:   {self.total_files} total, {len(self.files)} indexed",
             "",
-            "FILE MAP  (★ = entry point)",
-            "─" * 60,
+            "FILE MAP  (* = entry point)",
+            "-" * 60,
         ]
 
         by_dir: dict[str, list[FileInfo]] = {}
@@ -137,18 +137,26 @@ class ProjectMap:
             for file_info in sorted(by_dir[directory], key=lambda item: item.rel_path):
                 lines.append(f"{indent}{file_info.one_line()}")
 
-        all_classes = [(file_info.rel_path, class_name) for file_info in self.files for class_name in file_info.classes]
-        all_functions = [(file_info.rel_path, function_name) for file_info in self.files for function_name in file_info.functions]
+        all_classes = [
+            (file_info.rel_path, class_name)
+            for file_info in self.files
+            for class_name in file_info.classes
+        ]
+        all_functions = [
+            (file_info.rel_path, function_name)
+            for file_info in self.files
+            for function_name in file_info.functions
+        ]
 
         if all_classes:
-            lines += ["", "─" * 60, "CLASSES:"]
+            lines += ["", "-" * 60, "CLASSES:"]
             for path, class_name in sorted(all_classes, key=lambda item: item[1])[:50]:
-                lines.append(f"  {class_name}  →  {path}")
+                lines.append(f"  {class_name}  ->  {path}")
 
         if all_functions:
             lines += ["", "FUNCTIONS:"]
             for path, function_name in sorted(all_functions, key=lambda item: item[1])[:80]:
-                lines.append(f"  {function_name}()  →  {path}")
+                lines.append(f"  {function_name}()  ->  {path}")
 
         lines.append("</project_context>")
         result = "\n".join(lines)
@@ -166,16 +174,13 @@ def _extract_python(text: str) -> tuple[list, list, list]:
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 classes.append(node.name)
-            elif isinstance(node, ast.FunctionDef):
-                functions.append(node.name)
-            elif isinstance(node, ast.AsyncFunctionDef):
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 functions.append(node.name)
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     imports.append(alias.name.split(".")[0])
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    imports.append(node.module.split(".")[0])
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.append(node.module.split(".")[0])
     except SyntaxError:
         pass
     return classes, functions, list(dict.fromkeys(imports))[:10]
@@ -230,6 +235,29 @@ def _extract_symbols(text: str, ext: str) -> tuple[list, list, list]:
     return _extract_generic(text, ext)
 
 
+def _should_skip_file(file_path: Path) -> bool:
+    lowered_name = file_path.name.lower()
+    if file_path.name.startswith("."):
+        return True
+    if file_path.suffix.lower() in SKIP_EXTS:
+        return True
+    return lowered_name.endswith(".min.js") or lowered_name.endswith(".min.css")
+
+
+def _iter_files(root: Path):
+    for current_root, dirnames, filenames in os.walk(root, topdown=True):
+        dirnames[:] = [
+            dirname for dirname in dirnames
+            if dirname not in SKIP_DIRS and not dirname.startswith(".")
+        ]
+        current_dir = Path(current_root)
+        for filename in sorted(filenames):
+            file_path = current_dir / filename
+            if _should_skip_file(file_path):
+                continue
+            yield file_path
+
+
 class ProjectScanner:
     def __init__(self, root: Path):
         self.root = root
@@ -241,23 +269,14 @@ class ProjectScanner:
         total = 0
         skipped = 0
 
-        for file_path in sorted(self.root.rglob("*")):
-            if file_path.is_dir():
-                continue
-            if any(part in SKIP_DIRS for part in file_path.parts):
-                continue
-            if file_path.suffix.lower() in SKIP_EXTS:
-                continue
-            if file_path.name.startswith("."):
-                continue
-
+        for file_path in _iter_files(self.root):
             total += 1
             ext = file_path.suffix.lower()
             language = LANG_MAP.get(ext, "")
             if language:
                 languages[language] = languages.get(language, 0) + 1
 
-            if not language or total > MAX_FILES + skipped:
+            if not language or len(files) >= MAX_FILES:
                 skipped += 1
                 continue
 

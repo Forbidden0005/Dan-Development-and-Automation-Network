@@ -1270,7 +1270,7 @@ class TestCodeToolsBundle:
         assert "Usages of 'demo'" in usages
         assert "DRY RUN" in dry_run
         assert "Code Analysis" in analysis
-        assert "Missing packages" in deps
+        assert "Missing runtime packages" in deps
         assert "missing_pkg" in deps
         assert "tomli" in deps
         assert "testpaths" not in deps
@@ -1348,6 +1348,7 @@ class TestCodeToolsBundle:
         report = code_tools.check_deps(str(tmp_path))
 
         assert "Missing:   0" in report
+        assert "Runtime dependencies are installed." in report
         assert "Undeclared imports: 0" in report
     
     def test_check_deps_uses_resolved_python_launcher_for_install_hint(self, tmp_path, monkeypatch):
@@ -1359,7 +1360,30 @@ class TestCodeToolsBundle:
 
         report = code_tools.check_deps(str(tmp_path))
 
-        assert "Install with: py -m pip install httpx" in report
+        assert "Install runtime with: py -m pip install httpx" in report
+
+    def test_check_deps_separates_optional_bundle_guidance(self, tmp_path, monkeypatch):
+        import code_tools
+
+        (tmp_path / "requirements.txt").write_text("-r requirements-core.txt\n", encoding="utf-8")
+        (tmp_path / "requirements-core.txt").write_text("httpx\n", encoding="utf-8")
+        (tmp_path / "requirements-ml.txt").write_text("-r requirements-core.txt\npandas\nnumpy\n", encoding="utf-8")
+
+        monkeypatch.setattr(code_tools, "_python_cmd", lambda: ["py"])
+        monkeypatch.setattr(
+            code_tools.importlib.util,
+            "find_spec",
+            lambda name: object() if name == "httpx" else None,
+        )
+
+        report = code_tools.check_deps(str(tmp_path))
+
+        assert "Runtime dependencies are installed." in report
+        assert "Missing optional feature packages:" in report
+        assert "pandas" in report
+        assert "numpy" in report
+        assert "Optional feature bundles:" in report
+        assert "py -m pip install -r requirements-ml.txt" in report
 
     def test_register_code_tools_registers_expected_names(self, monkeypatch):
         import code_tools

@@ -8,7 +8,11 @@ import re
 from difflib import unified_diff
 from pathlib import Path
 from typing import Optional, AsyncGenerator
-import aiofiles
+
+try:
+    import aiofiles
+except ModuleNotFoundError:  # pragma: no cover - optional fast path
+    aiofiles = None
 
 import tool_registry as registry
 from security_utils import (
@@ -97,8 +101,16 @@ async def read_file_async(path: str, offset: int = 0, limit: int = 0) -> str:
         
         validate_file_size(p, max_size_mb=50)
         
-        async with aiofiles.open(p, mode='r', encoding='utf-8', errors='replace') as f:
-            content = await f.read()
+        if aiofiles is not None:
+            async with aiofiles.open(p, mode='r', encoding='utf-8', errors='replace') as f:
+                content = await f.read()
+        else:
+            logger.info("aiofiles not available; using thread-backed async file read fallback")
+            content = await asyncio.to_thread(
+                p.read_text,
+                encoding="utf-8",
+                errors="replace",
+            )
             
         lines = content.splitlines()
         

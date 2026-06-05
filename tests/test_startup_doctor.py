@@ -72,3 +72,30 @@ def test_startup_doctor_flags_missing_gui_runtime(tmp_path, monkeypatch):
     assert "GUI runtime imports are unavailable" in report
     assert "customtkinter" in report
     assert code_tools.startup_blocked(str(tmp_path), provider="ollama", target="gui") is True
+
+
+def test_environment_doctor_scopes_runtime_install_guidance(tmp_path, monkeypatch):
+    import code_tools
+
+    (tmp_path / "requirements.txt").write_text("-r requirements-core.txt\n", encoding="utf-8")
+    (tmp_path / "requirements-core.txt").write_text(
+        "anthropic>=0.39.0\nopenai>=1.54.0\nhttpx>=0.27.0\naiofiles>=23.0.0\n"
+        "ddgs>=0.1.0\ncustomtkinter>=5.2.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tests").mkdir()
+    _spec_table(monkeypatch, set())
+    monkeypatch.setattr(code_tools, "_python_cmd", lambda: ["py"])
+
+    report = code_tools.environment_doctor(str(tmp_path), provider="ollama")
+
+    assert "Runtime dependencies are missing: httpx" in report
+    assert "Feature-scoped runtime packages:" in report
+    assert "Inactive provider SDKs" in report
+    assert "Optional runtime accelerators" in report
+    assert "GUI-only packages" in report
+    assert "Suggested runtime fix:" in report
+    assert "py -m pip install httpx" in report
+    assert "py -m pip install anthropic openai" in report
+    assert "py -m pip install aiofiles ddgs" in report
+    assert "py -m pip install customtkinter" in report
