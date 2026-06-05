@@ -2181,8 +2181,11 @@ class TestApiConfigSecrets:
         config_file.write_text(
             json.dumps(
                 {
-                    "venice": {"api_key": "legacy-secret", "model": "custom-model"}
-                }  # pragma: allowlist secret
+                    "venice": {
+                        "api_key": "legacy-placeholder",  # pragma: allowlist secret
+                        "model": "custom-model",
+                    }
+                }
             ),
             encoding="utf-8",
         )
@@ -2549,15 +2552,17 @@ class TestAuthToolsBundle:
             (),
             {
                 "users": {"demo": type("User", (), {"roles": ["developer"]})()},
-                "authenticate": lambda self, api_key: (
-                    type("Session", (), {"username": "demo"})() if api_key == "good-key" else None
+                "authenticate": lambda self, candidate: (
+                    type("Session", (), {"username": "demo"})()
+                    if candidate == "accepted-value"
+                    else None
                 ),
             },
         )()
         monkeypatch.setattr(auth_tools, "get_auth_manager", lambda: auth_manager)
 
-        success = auth_tools.login_user("good-key")
-        failure = auth_tools.login_user("bad-key")
+        success = auth_tools.login_user("accepted-value")
+        failure = auth_tools.login_user("rejected-value")
 
         assert "Successfully authenticated as demo" in success
         assert "Invalid API key" in failure
