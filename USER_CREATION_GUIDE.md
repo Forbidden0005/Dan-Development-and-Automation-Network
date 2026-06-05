@@ -21,19 +21,19 @@ I've just demonstrated the user creation process and created several sample user
 
 ### Bob (Analyst)
 ```bash
-export DAN_API_KEY=k2Qdw08zH7VYcJNMv7sAtSSkEkvkWZaXggraTCQvwyw
+export DAN_API_KEY=<bob-analyst-api-key>
 ```
 **Permissions**: File read, web search, image analysis, ML prediction
 
 ### Charlie (Admin) 
 ```bash
-export DAN_API_KEY=mgtOC_aksZeV0Fm30SJ4ovxnOtc4UzQ_E-s04QWgvzo
+export DAN_API_KEY=<charlie-admin-api-key>
 ```
 **Permissions**: Full system access (all operations)
 
 ### Diana (Readonly)
 ```bash
-export DAN_API_KEY=K4PHo8yRV9NQhbDngn7dUxtrq78yo7Q5BO6EFqpH5v0
+export DAN_API_KEY=<diana-readonly-api-key>
 ```
 **Permissions**: Read files, view directories, recall knowledge
 
@@ -44,15 +44,15 @@ Set the API key for the user you want to operate as:
 
 ```bash
 # Use Bob's analyst account
-export DAN_API_KEY=k2Qdw08zH7VYcJNMv7sAtSSkEkvkWZaXggraTCQvwyw
+export DAN_API_KEY=<bob-analyst-api-key>
 python Dan.py "analyze this image and search the web"
 
 # Use Diana's readonly account  
-export DAN_API_KEY=K4PHo8yRV9NQhbDngn7dUxtrq78yo7Q5BO6EFqpH5v0
+export DAN_API_KEY=<diana-readonly-api-key>
 python Dan.py "read the README file"
 
 # Use Charlie's admin account
-export DAN_API_KEY=mgtOC_aksZeV0Fm30SJ4ovxnOtc4UzQ_E-s04QWgvzo
+export DAN_API_KEY=<charlie-admin-api-key>
 python Dan.py "create a new user named 'eve' with guest role"
 ```
 
@@ -61,11 +61,11 @@ Try different operations to see permission controls in action:
 
 ```bash
 # This will work for analyst
-export DAN_API_KEY=k2Qdw08zH7VYcJNMv7sAtSSkEkvkWZaXggraTCQvwyw
+export DAN_API_KEY=<bob-analyst-api-key>
 python Dan.py "read a file"  # ✅ Allowed
 
 # This will fail for readonly user
-export DAN_API_KEY=K4PHo8yRV9NQhbDngn7dUxtrq78yo7Q5BO6EFqpH5v0  
+export DAN_API_KEY=<diana-readonly-api-key>  
 python Dan.py "write to a file"  # ❌ Permission denied
 ```
 
@@ -77,7 +77,7 @@ If you have admin access, use Dan's built-in tools:
 
 ```bash
 # Set admin API key
-export DAN_API_KEY=mgtOC_aksZeV0Fm30SJ4ovxnOtc4UzQ_E-s04QWgvzo
+export DAN_API_KEY=<charlie-admin-api-key>
 
 # Create users through Dan
 python Dan.py "create a new user named 'eve' with role 'guest'"
@@ -146,7 +146,7 @@ python Dan.py "check my authentication status"
 
 ### List All Users (Admin Only)
 ```bash
-export DAN_API_KEY=mgtOC_aksZeV0Fm30SJ4ovxnOtc4UzQ_E-s04QWgvzo
+export DAN_API_KEY=<charlie-admin-api-key>
 python Dan.py "list all users"
 ```
 

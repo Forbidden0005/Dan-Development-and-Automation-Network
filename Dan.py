@@ -645,18 +645,21 @@ def main():
 
     args = parser.parse_args()
 
-    if args.verbose:
+    if getattr(args, "verbose", False):
         logging.getLogger().setLevel(logging.DEBUG)
         logger.setLevel(logging.DEBUG)
 
     # Determine provider
-    provider_name = args.provider or os.environ.get("DAN_PROVIDER", DEFAULT_PROVIDER)
-    model = args.model or os.environ.get("DAN_MODEL", DEFAULT_MODEL)
+    provider_name = getattr(args, "provider", None) or os.environ.get("DAN_PROVIDER", DEFAULT_PROVIDER)
+    model = getattr(args, "model", None) or os.environ.get("DAN_MODEL", DEFAULT_MODEL)
 
-    if args.doctor:
-        report = startup_doctor(".", provider=provider_name, target=args.target)
+    doctor_mode = getattr(args, "doctor", False)
+    startup_target = getattr(args, "target", "cli")
+
+    if doctor_mode:
+        report = startup_doctor(".", provider=provider_name, target=startup_target)
         print(report)
-        sys.exit(1 if startup_blocked(".", provider=provider_name, target=args.target) else 0)
+        sys.exit(1 if startup_blocked(".", provider=provider_name, target=startup_target) else 0)
 
     try:
         provider = get_provider(provider_name, model)
@@ -668,10 +671,13 @@ def main():
 
     actual_model = getattr(provider, 'model', model)
 
-    if args.prompt and args.print_mode:
-        one_shot(args.prompt, provider)
-    elif args.prompt:
-        one_shot(args.prompt, provider)
+    prompt = getattr(args, "prompt", None)
+    print_mode = getattr(args, "print_mode", False)
+
+    if prompt and print_mode:
+        one_shot(prompt, provider)
+    elif prompt:
+        one_shot(prompt, provider)
     else:
         repl(provider, actual_model, provider_name)
 

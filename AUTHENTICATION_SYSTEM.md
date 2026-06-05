@@ -27,11 +27,11 @@ python Dan.py
 DEFAULT ADMIN USER CREATED
 ============================================================
 Username: admin
-API Key:  0OobSgKAOCTLlpY6Sqm5I25M-aoc7ojyzAndfNsV7sE
+API Key:  <generated-admin-api-key>
 Roles:    admin (full access)
 
 Save this API key securely - it won't be shown again!
-Set environment variable: export DAN_API_KEY=0OobSgKAOCTLlpY6Sqm5I25M-aoc7ojyzAndfNsV7sE
+Set environment variable: export DAN_API_KEY=<generated-admin-api-key>
 ============================================================
 ```
 
@@ -161,7 +161,7 @@ All authentication events are logged to `auth_audit.log`:
 
 ```
 2024-12-19 10:30:15,123 [AUTH] INFO: User admin authenticated successfully from 127.0.0.1
-2024-12-19 10:30:20,456 [AUTH] WARNING: Authentication failed - invalid API key: 12345678... from 192.168.1.100
+2024-12-19 10:30:20,456 [AUTH] WARNING: Authentication failed - invalid API key fingerprint 1a2b3c4d5e6f from 192.168.1.100
 2024-12-19 10:35:10,789 [AUTH] INFO: User alice created by admin with roles: ['developer']
 ```
 
@@ -300,7 +300,7 @@ def admin_function():
 
 4. **Set API key**:
    ```bash
-   export DAN_API_KEY=generated_key_from_step_3
+   export DAN_API_KEY=<generated-key-from-step-3>
    ```
 
 5. **Create additional users** as needed

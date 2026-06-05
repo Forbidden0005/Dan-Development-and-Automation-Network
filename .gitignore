@@ -29,11 +29,14 @@ pip-wheel-metadata/
 !.env.example
 auth_data.json
 auth_audit.log
+auth_salt.bin
+bootstrap_admin_key.txt
 *.log
 
 # Local Dan state
 Dan/
 .dan/
+.claude/
 
 # IDE and OS files
 .idea/
@@ -45,3 +48,4 @@ Thumbs.db
 *.tmp
 *.temp
 *.bak
+tmp_tools_secure_check/

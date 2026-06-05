@@ -788,7 +788,7 @@ def repo_health(path: str = ".", provider: str = "", timeout: int = 120) -> str:
         except Exception as exc:
             compile_errors.append(f"{py_file}: {exc}")
 
-    compile_summary = f"OK compileall passed for {len(python_files)} file(s)."
+    compile_summary = f"OK compileall passed. Checked {len(python_files)} file(s)."
     if compile_errors:
         compile_summary = "FAIL compileall found syntax errors.\n" + "\n".join(compile_errors[:10])
 
@@ -925,9 +925,10 @@ def lint_check(path: str = ".", tool: str = "", fix: bool = False) -> str:
         args.append(str(path))
         code, out, err = _run(args)
         output = out + (("\n" + err) if err.strip() else "")
-        if not output.strip():
+        output_lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if not output_lines or output_lines == ["All checks passed!"]:
             return f"ruff: No issues found in {path}"
-        issues = len(output.strip().splitlines())
+        issues = len(output_lines)
         return f"ruff ({issues} issue(s)):\n\n{output[:4000]}"
 
     elif tool == "flake8":

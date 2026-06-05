@@ -4,12 +4,10 @@ import importlib.util
 
 
 def _spec_table(monkeypatch, available: set[str]):
-    original = importlib.util.find_spec
-
     def fake_find_spec(name, package=None):
         if name in available:
             return object()
-        return original(name, package)
+        return None
 
     monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
 
@@ -44,6 +42,19 @@ def test_startup_doctor_ollama_cli_only_blocks_required_runtime(tmp_path, monkey
     assert "Missing runtime packages:" in report
     assert "customtkinter" in report
     assert code_tools.startup_blocked(str(tmp_path), provider="ollama", target="cli") is False
+
+
+def test_startup_doctor_does_not_duplicate_provider_runtime_blocker(tmp_path, monkeypatch):
+    import code_tools
+
+    (tmp_path / "requirements-core.txt").write_text("httpx>=0.27.0\n", encoding="utf-8")
+    _spec_table(monkeypatch, set())
+
+    report = code_tools.startup_doctor(str(tmp_path), provider="ollama", target="cli")
+
+    assert "Startup blockers:     1" in report
+    assert "Startup-critical runtime dependencies are missing: httpx" in report
+    assert "Provider 'ollama' is missing required SDK(s)" not in report
 
 
 def test_startup_doctor_keeps_missing_pytest_as_advisory(tmp_path, monkeypatch):

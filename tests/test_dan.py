@@ -1235,6 +1235,22 @@ class TestCodeToolsBundle:
         assert "ruff: No issues found" in lint_result
         assert "already formatted" in format_result
 
+    def test_lint_check_treats_ruff_success_banner_as_clean(self, monkeypatch, tmp_path):
+        import code_tools
+
+        root = tmp_path / "proj"
+        root.mkdir()
+
+        monkeypatch.setattr(
+            code_tools,
+            "_run",
+            lambda cmd, cwd=None, timeout=120: (0, "All checks passed!\n", ""),
+        )
+
+        lint_result = code_tools.lint_check(str(root), tool="ruff")
+
+        assert "ruff: No issues found" in lint_result
+
     def test_find_usages_refactor_analyze_and_deps(self, tmp_path, monkeypatch):
         import code_tools
 
@@ -1737,6 +1753,27 @@ class TestAuthSystemHardening:
 
         assert auth_system.AUTH_CONFIG["salt_file"].exists()
         assert hashed_one == hashed_two
+
+    def test_failed_auth_attempt_uses_non_secret_fingerprint(self, monkeypatch, tmp_path):
+        import auth_system
+
+        monkeypatch.setitem(auth_system.AUTH_CONFIG, "require_auth", True)
+        monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
+        monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
+        monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
+        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+
+        manager = auth_system.AuthManager()
+        submitted_key = "submitted-key-that-should-not-be-logged"
+
+        assert manager.authenticate(submitted_key, ip_address="127.0.0.1") is None
+
+        attempt = manager.auth_attempts[-1]
+        audit_log = auth_system.AUTH_CONFIG["audit_log"].read_text(encoding="utf-8")
+        assert attempt.api_key_fingerprint
+        assert submitted_key not in attempt.api_key_fingerprint
+        assert submitted_key[:8] not in audit_log
+        assert submitted_key not in audit_log
 
     def test_authenticate_returns_guest_when_auth_disabled(self, monkeypatch, tmp_path):
         import auth_system

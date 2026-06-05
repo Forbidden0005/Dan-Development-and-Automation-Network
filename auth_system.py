@@ -65,7 +65,7 @@ class AuthAttempt:
     """Authentication attempt log"""
     timestamp: float
     username: str
-    api_key_prefix: str
+    api_key_fingerprint: str
     success: bool
     ip_address: str = ""
     user_agent: str = ""
@@ -129,14 +129,24 @@ class AuthManager:
 
     def _setup_audit_logging(self):
         """Setup dedicated audit logging"""
-        AUTH_CONFIG["audit_log"].parent.mkdir(parents=True, exist_ok=True)
-        audit_handler = logging.FileHandler(AUTH_CONFIG["audit_log"])
-        audit_handler.setFormatter(logging.Formatter(
-            '%(asctime)s [AUTH] %(levelname)s: %(message)s'
-        ))
+        audit_log_path = AUTH_CONFIG["audit_log"]
+        audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_base_filename = str(audit_log_path.resolve())
         self.audit_logger = logging.getLogger("dan.auth.audit")
-        if not any(isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", None) == audit_handler.baseFilename
+
+        for handler in list(self.audit_logger.handlers):
+            if not isinstance(handler, logging.FileHandler):
+                continue
+            if getattr(handler, "baseFilename", None) != audit_base_filename:
+                self.audit_logger.removeHandler(handler)
+                handler.close()
+
+        if not any(isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", None) == audit_base_filename
                    for handler in self.audit_logger.handlers):
+            audit_handler = logging.FileHandler(audit_log_path)
+            audit_handler.setFormatter(logging.Formatter(
+                '%(asctime)s [AUTH] %(levelname)s: %(message)s'
+            ))
             self.audit_logger.addHandler(audit_handler)
         self.audit_logger.setLevel(logging.INFO)
     
@@ -233,6 +243,12 @@ class AuthManager:
     def _hash_api_key(self, api_key: str) -> str:
         """Hash API key for secure storage"""
         return hashlib.pbkdf2_hmac("sha256", api_key.encode(), self._salt, 100_000).hex()
+
+    def _fingerprint_api_key(self, api_key: str) -> str:
+        """Return a non-secret audit identifier for correlating auth attempts."""
+        if not api_key:
+            return "empty"
+        return hmac.new(self._salt, api_key.encode(), hashlib.sha256).hexdigest()[:12]
     
     def _get_permissions_for_roles(self, roles: List[str]) -> Set[str]:
         """Get all permissions for given roles"""
@@ -291,14 +307,18 @@ class AuthManager:
         attempt = AuthAttempt(
             timestamp=current_time,
             username=user.username if user else "unknown",
-            api_key_prefix=api_key[:8] + "...",
+            api_key_fingerprint=self._fingerprint_api_key(api_key),
             success=False,
             ip_address=ip_address,
             user_agent=user_agent
         )
 
         if not user:
-            self.audit_logger.warning(f"Authentication failed - invalid API key: {api_key[:8]}... from {ip_address}")
+            self.audit_logger.warning(
+                "Authentication failed - invalid API key fingerprint %s from %s",
+                attempt.api_key_fingerprint,
+                ip_address,
+            )
             self.auth_attempts.append(attempt)
             return None
 
