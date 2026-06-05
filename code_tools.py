@@ -16,8 +16,18 @@ import tool_registry as registry
 
 logger = logging.getLogger(__name__)
 
-_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
-              ".tox", "dist", "build", ".mypy_cache", ".pytest_cache"}
+_SKIP_DIRS = {
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".tox",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
+}
 _PYTHON_CANDIDATES = ("python", "py")
 _DEV_REQUIREMENT_SOURCES = {"requirements-dev.txt"}
 _OPTIONAL_REQUIREMENT_SOURCES = {"requirements-ml.txt", "requirements-vision.txt"}
@@ -41,12 +51,8 @@ _PROVIDER_KEY_HINTS = {
         ("ANTHROPIC_API_KEY", "export ANTHROPIC_API_KEY=..."),
         ("ANTHROPIC_API_KEY_1", "export ANTHROPIC_API_KEY_1=..."),
     ),
-    "openai": (
-        ("OPENAI_API_KEY", "export OPENAI_API_KEY=..."),
-    ),
-    "venice": (
-        ("VENICE_API_KEY", "export VENICE_API_KEY=..."),
-    ),
+    "openai": (("OPENAI_API_KEY", "export OPENAI_API_KEY=..."),),
+    "venice": (("VENICE_API_KEY", "export VENICE_API_KEY=..."),),
 }
 _IMPORT_TO_PACKAGE = {
     "PIL": "Pillow",
@@ -84,14 +90,17 @@ _PACKAGE_TO_IMPORTS = {
 
 # ── Subprocess helper ─────────────────────────────────────────────────────────
 
-def _run(cmd: list[str], cwd: str | None = None,
-         timeout: int = 120) -> tuple[int, str, str]:
+
+def _run(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str, str]:
     """Run a subprocess. Returns (returncode, stdout, stderr)."""
     try:
         r = subprocess.run(
-            cmd, cwd=cwd or os.getcwd(),
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
+            cmd,
+            cwd=cwd or os.getcwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
         return r.returncode, r.stdout, r.stderr
@@ -216,18 +225,13 @@ def _check_declared_dependencies(root: Path) -> tuple[list[tuple[str, str]], lis
 
 
 def _declared_dependency_names(root: Path) -> set[str]:
-    return {
-        pkg.lower()
-        for pkg, _ in _iter_declared_dependencies(root)
-    }
+    return {pkg.lower() for pkg, _ in _iter_declared_dependencies(root)}
 
 
 def _local_module_names(root: Path) -> set[str]:
     names = {path.stem for path in root.glob("*.py")}
     names.update(
-        path.name
-        for path in root.iterdir()
-        if path.is_dir() and (path / "__init__.py").exists()
+        path.name for path in root.iterdir() if path.is_dir() and (path / "__init__.py").exists()
     )
     return names
 
@@ -260,20 +264,13 @@ def _third_party_imports(root: Path) -> dict[str, list[str]]:
                 package_name = _IMPORT_TO_PACKAGE.get(module, module)
                 imports.setdefault(package_name, set()).add(rel_path)
 
-    return {
-        package: sorted(paths)
-        for package, paths in sorted(imports.items())
-    }
+    return {package: sorted(paths) for package, paths in sorted(imports.items())}
 
 
 def _find_undeclared_dependencies(root: Path) -> dict[str, list[str]]:
     declared = _declared_dependency_names(root)
     imports = _third_party_imports(root)
-    return {
-        package: paths
-        for package, paths in imports.items()
-        if package.lower() not in declared
-    }
+    return {package: paths for package, paths in imports.items() if package.lower() not in declared}
 
 
 def _package_import_candidates(package: str) -> tuple[str, ...]:
@@ -310,7 +307,7 @@ def _detect_active_provider(provider: str = "") -> str:
 
 
 def _partition_missing_dependencies(
-    missing: list[tuple[str, str]]
+    missing: list[tuple[str, str]],
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
     """Split missing packages into runtime, development, and optional groups."""
     runtime_missing: list[tuple[str, str]] = []
@@ -328,9 +325,7 @@ def _partition_missing_dependencies(
     return runtime_missing, dev_missing, optional_missing
 
 
-def _group_missing_by_source(
-    missing: list[tuple[str, str]]
-) -> dict[str, list[str]]:
+def _group_missing_by_source(missing: list[tuple[str, str]]) -> dict[str, list[str]]:
     grouped: dict[str, list[str]] = {}
     for pkg, source in missing:
         grouped.setdefault(source, []).append(pkg)
@@ -349,9 +344,7 @@ def _classify_runtime_missing(
     startup_required = {
         pkg.lower() for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
     }
-    startup_required.update(
-        pkg.lower() for pkg in _STARTUP_TARGET_PACKAGES.get(startup_target, [])
-    )
+    startup_required.update(pkg.lower() for pkg in _STARTUP_TARGET_PACKAGES.get(startup_target, []))
 
     other_provider_packages = {
         pkg.lower()
@@ -360,9 +353,7 @@ def _classify_runtime_missing(
         for pkg in packages
     }
     gui_only_packages = {
-        pkg.lower()
-        for pkg in _STARTUP_TARGET_PACKAGES.get("gui", [])
-        if startup_target != "gui"
+        pkg.lower() for pkg in _STARTUP_TARGET_PACKAGES.get("gui", []) if startup_target != "gui"
     }
 
     startup_runtime_missing: list[tuple[str, str]] = []
@@ -374,17 +365,15 @@ def _classify_runtime_missing(
         if normalized in startup_required:
             startup_runtime_missing.append((pkg, source))
         elif normalized in other_provider_packages:
-            feature_scoped_runtime_missing.setdefault(
-                "Inactive provider SDKs", []
-            ).append((pkg, source))
+            feature_scoped_runtime_missing.setdefault("Inactive provider SDKs", []).append(
+                (pkg, source)
+            )
         elif normalized in gui_only_packages:
-            feature_scoped_runtime_missing.setdefault(
-                "GUI-only packages", []
-            ).append((pkg, source))
+            feature_scoped_runtime_missing.setdefault("GUI-only packages", []).append((pkg, source))
         elif normalized in _OPTIONAL_RUNTIME_PACKAGES:
-            feature_scoped_runtime_missing.setdefault(
-                "Optional runtime accelerators", []
-            ).append((pkg, source))
+            feature_scoped_runtime_missing.setdefault("Optional runtime accelerators", []).append(
+                (pkg, source)
+            )
         else:
             general_runtime_missing.append((pkg, source))
 
@@ -450,13 +439,14 @@ def _collect_environment_diagnostics(
     startup_runtime_missing, feature_scoped_runtime_missing, general_runtime_missing = (
         _classify_runtime_missing(runtime_missing, active_provider, startup_target)
     )
-    runtime_missing_map = {pkg.lower(): (pkg, source) for pkg, source in runtime_missing}
     provider_missing = [
-        pkg for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
+        pkg
+        for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
         if importlib.util.find_spec(pkg) is None
     ]
     target_missing = [
-        module for module in _STARTUP_TARGET_IMPORTS[startup_target]
+        module
+        for module in _STARTUP_TARGET_IMPORTS[startup_target]
         if importlib.util.find_spec(module) is None
     ]
     python_cmd = " ".join(_python_cmd())
@@ -501,13 +491,11 @@ def _collect_environment_diagnostics(
         )
 
     if startup_target == "gui" and target_missing:
-        blockers.append(
-            "GUI runtime imports are unavailable: "
-            + ", ".join(target_missing)
-        )
+        blockers.append("GUI runtime imports are unavailable: " + ", ".join(target_missing))
 
     provider_only_missing = [
-        pkg for pkg in provider_missing
+        pkg
+        for pkg in provider_missing
         if pkg.lower() not in {name.lower() for name, _ in startup_runtime_missing}
     ]
 
@@ -737,7 +725,8 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
         runtime_install_targets = [pkg for pkg, _ in startup_runtime_missing]
         runtime_install_targets.extend(pkg for pkg, _ in general_runtime_missing)
         provider_install_targets = [
-            pkg for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
+            pkg
+            for pkg in _PROVIDER_RUNTIME_REQUIREMENTS.get(active_provider, [])
             if pkg.lower() not in {name.lower() for name in runtime_install_targets}
         ]
         runtime_install_targets.extend(provider_install_targets)
@@ -753,17 +742,14 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
                 install_targets = " ".join(pkg for pkg, _ in packages)
                 lines.append(f"  - {scope}: {python_cmd} -m pip install {install_targets}")
         if has_tests and not pytest_available:
-            lines.append(
-                f"  Install test tooling: {python_cmd} -m pip install pytest pytest-cov"
-            )
+            lines.append(f"  Install test tooling: {python_cmd} -m pip install pytest pytest-cov")
         if dev_missing:
             lines.append(
                 f"  Or install the full dev toolchain: {python_cmd} -m pip install -r requirements-dev.txt"
             )
     elif dev_missing:
         lines.append(
-            "\nSuggested dev fix:\n"
-            f"  {python_cmd} -m pip install -r requirements-dev.txt"
+            "\nSuggested dev fix:\n" f"  {python_cmd} -m pip install -r requirements-dev.txt"
         )
 
     return "\n".join(lines)
@@ -833,8 +819,8 @@ def repo_health(path: str = ".", provider: str = "", timeout: int = 120) -> str:
 
 # ── 1. RunTests ───────────────────────────────────────────────────────────────
 
-def run_tests(path: str = ".", framework: str = "", args: str = "",
-              timeout: int = 60) -> str:
+
+def run_tests(path: str = ".", framework: str = "", args: str = "", timeout: int = 60) -> str:
     """Run the project's test suite and return structured results."""
 
     root = Path(path).resolve()
@@ -858,11 +844,6 @@ def run_tests(path: str = ".", framework: str = "", args: str = "",
         code, out, err = _run(cmd, timeout=timeout)
         output = out + (("\n" + err) if err.strip() else "")
 
-        # Parse summary line
-        summary_match = re.search(
-            r"(\d+ passed)?[,\s]*(\d+ failed)?[,\s]*(\d+ error)?[,\s]*(\d+ warning)?",
-            output, re.IGNORECASE
-        )
         lines = [f"Framework: pytest", f"Exit code: {code}"]
 
         # Extract failures for quick reference
@@ -894,11 +875,11 @@ def run_tests(path: str = ".", framework: str = "", args: str = "",
         return f"Framework: go test\nExit code: {code}\n\n{(out + err)[-3000:]}"
 
     else:
-        return (f"Unknown test framework: {framework}. "
-                "Supported: pytest, unittest, jest, go")
+        return f"Unknown test framework: {framework}. " "Supported: pytest, unittest, jest, go"
 
 
 # ── 2. LintCheck ─────────────────────────────────────────────────────────────
+
 
 def lint_check(path: str = ".", tool: str = "", fix: bool = False) -> str:
     """Run a linter/type-checker and return issues."""
@@ -927,7 +908,7 @@ def lint_check(path: str = ".", tool: str = "", fix: bool = False) -> str:
             tool = "none"
 
     if tool == "none":
-        return ("No linter found. Install one: pip install ruff  OR  pip install flake8")
+        return "No linter found. Install one: pip install ruff  OR  pip install flake8"
 
     if tool == "ruff":
         args = (
@@ -984,8 +965,8 @@ def lint_check(path: str = ".", tool: str = "", fix: bool = False) -> str:
 
 # ── 3. FormatCode ─────────────────────────────────────────────────────────────
 
-def format_code(path: str = ".", formatter: str = "",
-                check_only: bool = False) -> str:
+
+def format_code(path: str = ".", formatter: str = "", check_only: bool = False) -> str:
     """Run a code formatter and report what changed."""
 
     root = Path(path).resolve()
@@ -1003,9 +984,11 @@ def format_code(path: str = ".", formatter: str = "",
             formatter = "prettier"
 
     if not formatter:
-        return ("No formatter found. Install one:\n"
-                "  Python: pip install ruff  OR  pip install black\n"
-                "  JS/TS:  npm install -g prettier")
+        return (
+            "No formatter found. Install one:\n"
+            "  Python: pip install ruff  OR  pip install black\n"
+            "  JS/TS:  npm install -g prettier"
+        )
 
     if formatter == "ruff":
         args = ["ruff", "format"]
@@ -1047,6 +1030,7 @@ def format_code(path: str = ".", formatter: str = "",
 
 # ── 4. FindUsages ─────────────────────────────────────────────────────────────
 
+
 def find_usages(symbol: str, path: str = ".", language: str = "") -> str:
     """Find all usages of a symbol (function, class, variable) across a codebase.
 
@@ -1084,10 +1068,15 @@ def find_usages(symbol: str, path: str = ".", language: str = "") -> str:
     # File extension filter
     auto_ext = language or ""
     ext_map = {
-        "python": "*.py", "py": "*.py",
-        "js": "*.js", "javascript": "*.js",
-        "ts": "*.ts", "typescript": "*.ts",
-        "go": "*.go", "rust": "*.rs", "rb": "*.rb",
+        "python": "*.py",
+        "py": "*.py",
+        "js": "*.js",
+        "javascript": "*.js",
+        "ts": "*.ts",
+        "typescript": "*.ts",
+        "go": "*.go",
+        "rust": "*.rs",
+        "rb": "*.rb",
     }
     glob_pat = ext_map.get(auto_ext.lower(), "*")
 
@@ -1136,8 +1125,10 @@ def find_usages(symbol: str, path: str = ".", language: str = "") -> str:
 
 # ── 5. RefactorRename ─────────────────────────────────────────────────────────
 
-def refactor_rename(old_name: str, new_name: str, path: str = ".",
-                    dry_run: bool = True, file_pattern: str = "*.py") -> str:
+
+def refactor_rename(
+    old_name: str, new_name: str, path: str = ".", dry_run: bool = True, file_pattern: str = "*.py"
+) -> str:
     """Rename a symbol across all matching files in the project.
 
     Always previews changes by default (dry_run=True).
@@ -1186,8 +1177,8 @@ def refactor_rename(old_name: str, new_name: str, path: str = ".",
         lines.append(f"\n  {rel} ({count} occurrence{'s' if count != 1 else ''})")
 
         # Show a compact diff (first 5 changed lines)
-        orig_lines  = original.splitlines()
-        mod_lines   = modified.splitlines()
+        orig_lines = original.splitlines()
+        mod_lines = modified.splitlines()
         shown = 0
         for i, (ol, ml) in enumerate(zip(orig_lines, mod_lines), 1):
             if ol != ml:
@@ -1218,6 +1209,7 @@ def refactor_rename(old_name: str, new_name: str, path: str = ".",
 
 # ── 6. AnalyzeCode ────────────────────────────────────────────────────────────
 
+
 def analyze_code(path: str) -> str:
     """Analyze a Python file or directory using the AST.
 
@@ -1233,8 +1225,7 @@ def analyze_code(path: str) -> str:
     if not files:
         return f"No Python files found in {path}"
 
-    totals = {"functions": 0, "classes": 0, "imports": 0, "lines": 0,
-              "todos": [], "issues": []}
+    totals = {"functions": 0, "classes": 0, "imports": 0, "lines": 0, "todos": [], "issues": []}
 
     for fp in files[:50]:  # cap at 50 files
         try:
@@ -1264,9 +1255,15 @@ def analyze_code(path: str) -> str:
                 totals["functions"] += 1
                 # Flag missing docstrings on public functions
                 is_public = not node.name.startswith("_")
-                has_doc   = (isinstance(node.body[0], ast.Expr) and
-                             isinstance(node.body[0].value, ast.Constant) and
-                             isinstance(node.body[0].value.value, str)) if node.body else False
+                has_doc = (
+                    (
+                        isinstance(node.body[0], ast.Expr)
+                        and isinstance(node.body[0].value, ast.Constant)
+                        and isinstance(node.body[0].value.value, str)
+                    )
+                    if node.body
+                    else False
+                )
                 if is_public and not has_doc and len(files) == 1:
                     totals["issues"].append(
                         f"  {fp.name}:{node.lineno}: public function '{node.name}' has no docstring"
@@ -1311,6 +1308,7 @@ def analyze_code(path: str) -> str:
 
 # ── 7. CheckDeps ─────────────────────────────────────────────────────────────
 
+
 def check_deps(path: str = ".") -> str:
     """Check which project dependencies are installed and which are missing."""
 
@@ -1318,8 +1316,10 @@ def check_deps(path: str = ".") -> str:
     requirements = _iter_declared_dependencies(root)
 
     if not requirements:
-        return (f"No requirements file found in {path}. "
-                "Looked for: requirements.txt, requirements-dev.txt, requirements-core.txt, pyproject.toml")
+        return (
+            f"No requirements file found in {path}. "
+            "Looked for: requirements.txt, requirements-dev.txt, requirements-core.txt, pyproject.toml"
+        )
     installed, missing = _check_declared_dependencies(root)
     undeclared = _find_undeclared_dependencies(root)
     runtime_missing, dev_missing, optional_missing = _partition_missing_dependencies(missing)
@@ -1360,9 +1360,7 @@ def check_deps(path: str = ".") -> str:
             lines.append(f"  x  {pkg}  (from {src})")
         lines.append("\nOptional feature bundles:")
         for source in optional_missing_by_source:
-            lines.append(
-                f"  - {source}: {python_cmd} -m pip install -r {source}"
-            )
+            lines.append(f"  - {source}: {python_cmd} -m pip install -r {source}")
     else:
         if not runtime_missing and not dev_missing:
             lines.append("\nAll declared dependencies are installed.")
@@ -1377,6 +1375,7 @@ def check_deps(path: str = ".") -> str:
 
 # ── Registration ──────────────────────────────────────────────────────────────
 
+
 def register_code_tools() -> None:
     """Register all coding intelligence tools."""
 
@@ -1390,13 +1389,26 @@ def register_code_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "path":      {"type": "string",  "description": "Project root or test directory", "default": "."},
-                "framework": {"type": "string",  "description": "Test framework (pytest/unittest/jest/go). Auto-detected if empty.", "default": ""},
-                "args":      {"type": "string",  "description": "Extra arguments to pass (e.g. '-k test_login -v')", "default": ""},
-                "timeout":   {"type": "integer", "description": "Timeout in seconds", "default": 60},
+                "path": {
+                    "type": "string",
+                    "description": "Project root or test directory",
+                    "default": ".",
+                },
+                "framework": {
+                    "type": "string",
+                    "description": "Test framework (pytest/unittest/jest/go). Auto-detected if empty.",
+                    "default": "",
+                },
+                "args": {
+                    "type": "string",
+                    "description": "Extra arguments to pass (e.g. '-k test_login -v')",
+                    "default": "",
+                },
+                "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 60},
             },
         },
-        handler=run_tests, category="code",
+        handler=run_tests,
+        category="code",
     )
 
     registry.register(
@@ -1408,12 +1420,21 @@ def register_code_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "path": {"type": "string",  "description": "Path to check",       "default": "."},
-                "tool": {"type": "string",  "description": "Linter to use (auto-detected if empty)", "default": ""},
-                "fix":  {"type": "boolean", "description": "Apply auto-fixes where possible", "default": False},
+                "path": {"type": "string", "description": "Path to check", "default": "."},
+                "tool": {
+                    "type": "string",
+                    "description": "Linter to use (auto-detected if empty)",
+                    "default": "",
+                },
+                "fix": {
+                    "type": "boolean",
+                    "description": "Apply auto-fixes where possible",
+                    "default": False,
+                },
             },
         },
-        handler=lint_check, category="code",
+        handler=lint_check,
+        category="code",
     )
 
     registry.register(
@@ -1425,12 +1446,25 @@ def register_code_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "path":       {"type": "string",  "description": "File or directory to format", "default": "."},
-                "formatter":  {"type": "string",  "description": "Formatter to use (auto-detected if empty)", "default": ""},
-                "check_only": {"type": "boolean", "description": "Preview only - do not write changes", "default": False},
+                "path": {
+                    "type": "string",
+                    "description": "File or directory to format",
+                    "default": ".",
+                },
+                "formatter": {
+                    "type": "string",
+                    "description": "Formatter to use (auto-detected if empty)",
+                    "default": "",
+                },
+                "check_only": {
+                    "type": "boolean",
+                    "description": "Preview only - do not write changes",
+                    "default": False,
+                },
             },
         },
-        handler=format_code, category="code",
+        handler=format_code,
+        category="code",
     )
 
     registry.register(
@@ -1442,13 +1476,22 @@ def register_code_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "symbol":   {"type": "string", "description": "Symbol name to find"},
-                "path":     {"type": "string", "description": "Root directory to search", "default": "."},
-                "language": {"type": "string", "description": "Language filter (py/js/ts/go - empty = all)", "default": ""},
+                "symbol": {"type": "string", "description": "Symbol name to find"},
+                "path": {
+                    "type": "string",
+                    "description": "Root directory to search",
+                    "default": ".",
+                },
+                "language": {
+                    "type": "string",
+                    "description": "Language filter (py/js/ts/go - empty = all)",
+                    "default": "",
+                },
             },
             "required": ["symbol"],
         },
-        handler=find_usages, category="code",
+        handler=find_usages,
+        category="code",
     )
 
     registry.register(
@@ -1460,15 +1503,24 @@ def register_code_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "old_name":     {"type": "string",  "description": "Current symbol name"},
-                "new_name":     {"type": "string",  "description": "New symbol name"},
-                "path":         {"type": "string",  "description": "Root directory", "default": "."},
-                "dry_run":      {"type": "boolean", "description": "Preview only (default: true)", "default": True},
-                "file_pattern": {"type": "string",  "description": "Glob pattern for files to modify", "default": "*.py"},
+                "old_name": {"type": "string", "description": "Current symbol name"},
+                "new_name": {"type": "string", "description": "New symbol name"},
+                "path": {"type": "string", "description": "Root directory", "default": "."},
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Preview only (default: true)",
+                    "default": True,
+                },
+                "file_pattern": {
+                    "type": "string",
+                    "description": "Glob pattern for files to modify",
+                    "default": "*.py",
+                },
             },
             "required": ["old_name", "new_name"],
         },
-        handler=refactor_rename, category="code",
+        handler=refactor_rename,
+        category="code",
     )
 
     registry.register(
@@ -1484,7 +1536,8 @@ def register_code_tools() -> None:
             },
             "required": ["path"],
         },
-        handler=analyze_code, category="code",
+        handler=analyze_code,
+        category="code",
     )
 
     registry.register(
@@ -1499,7 +1552,8 @@ def register_code_tools() -> None:
                 "path": {"type": "string", "description": "Project root directory", "default": "."},
             },
         },
-        handler=check_deps, category="code",
+        handler=check_deps,
+        category="code",
     )
 
     registry.register(
@@ -1515,12 +1569,13 @@ def register_code_tools() -> None:
                 "provider": {
                     "type": "string",
                     "description": "Provider to validate (anthropic/openai/venice/ollama). "
-                                   "Defaults to the configured provider if omitted.",
+                    "Defaults to the configured provider if omitted.",
                     "default": "",
                 },
             },
         },
-        handler=environment_doctor, category="code",
+        handler=environment_doctor,
+        category="code",
     )
 
     registry.register(
@@ -1536,7 +1591,7 @@ def register_code_tools() -> None:
                 "provider": {
                     "type": "string",
                     "description": "Provider to validate (anthropic/openai/venice/ollama). "
-                                   "Defaults to the configured provider if omitted.",
+                    "Defaults to the configured provider if omitted.",
                     "default": "",
                 },
                 "target": {
@@ -1546,7 +1601,8 @@ def register_code_tools() -> None:
                 },
             },
         },
-        handler=startup_doctor, category="code",
+        handler=startup_doctor,
+        category="code",
     )
 
     registry.register(
@@ -1562,7 +1618,7 @@ def register_code_tools() -> None:
                 "provider": {
                     "type": "string",
                     "description": "Provider to validate (anthropic/openai/venice/ollama). "
-                                   "Defaults to the configured provider if omitted.",
+                    "Defaults to the configured provider if omitted.",
                     "default": "",
                 },
                 "timeout": {
@@ -1572,5 +1628,6 @@ def register_code_tools() -> None:
                 },
             },
         },
-        handler=repo_health, category="code",
+        handler=repo_health,
+        category="code",
     )

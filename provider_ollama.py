@@ -18,6 +18,7 @@ class OllamaProvider:
         self.num_ctx = int(os.environ.get("OLLAMA_NUM_CTX", "8192"))
         try:
             import httpx
+
             self._httpx = httpx
         except ImportError:
             raise ImportError("pip install httpx")
@@ -26,14 +27,16 @@ class OllamaProvider:
     def _to_ollama_tools(tools: list[dict]) -> list[dict]:
         result = []
         for t in tools:
-            result.append({
-                "type": "function",
-                "function": {
-                    "name": t["name"],
-                    "description": t.get("description", ""),
-                    "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
-                },
-            })
+            result.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t.get("description", ""),
+                        "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
+                    },
+                }
+            )
         return result
 
     @staticmethod
@@ -57,12 +60,14 @@ class OllamaProvider:
                     if block.get("type") == "text":
                         text += block.get("text", "")
                     elif block.get("type") == "tool_use":
-                        tool_calls.append({
-                            "function": {
-                                "name": block.get("name", ""),
-                                "arguments": block.get("input", {}),
+                        tool_calls.append(
+                            {
+                                "function": {
+                                    "name": block.get("name", ""),
+                                    "arguments": block.get("input", {}),
+                                }
                             }
-                        })
+                        )
                 entry: dict = {"role": "assistant", "content": text}
                 if tool_calls:
                     entry["tool_calls"] = tool_calls
@@ -73,10 +78,12 @@ class OllamaProvider:
                     if not isinstance(block, dict):
                         continue
                     if block.get("type") == "tool_result":
-                        msgs.append({
-                            "role": "tool",
-                            "content": str(block.get("content", "")),
-                        })
+                        msgs.append(
+                            {
+                                "role": "tool",
+                                "content": str(block.get("content", "")),
+                            }
+                        )
                     elif block.get("type") == "text":
                         msgs.append({"role": "user", "content": block.get("text", "")})
 
@@ -96,8 +103,13 @@ class OllamaProvider:
             calls.append(ToolCall(id=f"call_{i}", name=fn.get("name", ""), input=args))
         return calls
 
-    def chat(self, messages: list[Message], system: str = "",
-             tools: list[dict] | None = None, max_tokens: int = 8192) -> Response:
+    def chat(
+        self,
+        messages: list[Message],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+    ) -> Response:
         msgs = self._to_ollama_messages(messages, system)
         payload: dict = {
             "model": self.model,
@@ -124,9 +136,14 @@ class OllamaProvider:
         resp.tool_calls = self._parse_tool_calls(message)
         return resp
 
-    def chat_stream(self, messages: list[Message], system: str = "",
-                    tools: list[dict] | None = None, max_tokens: int = 8192,
-                    on_text: Callable[[str], None] | None = None) -> Response:
+    def chat_stream(
+        self,
+        messages: list[Message],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+        on_text: Callable[[str], None] | None = None,
+    ) -> Response:
         msgs = self._to_ollama_messages(messages, system)
         payload: dict = {
             "model": self.model,
@@ -140,8 +157,10 @@ class OllamaProvider:
         resp = Response()
         try:
             with self._httpx.stream(
-                "POST", f"{self.base_url}/api/chat",
-                json=payload, timeout=self.timeout,
+                "POST",
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=self.timeout,
             ) as r:
                 r.raise_for_status()
                 for line in r.iter_lines():

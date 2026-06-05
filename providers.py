@@ -26,6 +26,7 @@ def get_provider(name: str | None = None, model: str | None = None):
 
     try:
         from api_config import load_config
+
         cfg = load_config()
         if not name and cfg.get("provider"):
             name = cfg["provider"]
@@ -36,7 +37,7 @@ def get_provider(name: str | None = None, model: str | None = None):
     except Exception:
         pass
 
-    name = (name or DEFAULT_PROVIDER)
+    name = name or DEFAULT_PROVIDER
     if isinstance(name, str):
         name = name.strip().lower()
     model = model or DEFAULT_MODEL

@@ -49,7 +49,9 @@ def compact(messages: list[dict], provider: object) -> list[dict]:
         content = m.get("content", "")
         if isinstance(content, list):
             content = " ".join(
-                b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+                b.get("text", "")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
             )
         if content:
             summary_parts.append(f"[{role}]: {content[:200]}")
@@ -59,6 +61,7 @@ def compact(messages: list[dict], provider: object) -> list[dict]:
     # Ask the provider to summarize
     try:
         from providers import Message
+
         summary_prompt = (
             "Summarize this conversation history concisely, preserving key decisions, "
             "file changes, and context needed to continue:\n\n" + summary_text
@@ -80,7 +83,11 @@ def compact(messages: list[dict], provider: object) -> list[dict]:
 
     old_tokens = estimate_messages_tokens(messages)
     new_tokens = estimate_messages_tokens(compacted)
-    logger.info("Compacted: %d → %d tokens (%.0f%% reduction)",
-                old_tokens, new_tokens, (1 - new_tokens/old_tokens) * 100)
+    logger.info(
+        "Compacted: %d → %d tokens (%.0f%% reduction)",
+        old_tokens,
+        new_tokens,
+        (1 - new_tokens / old_tokens) * 100,
+    )
 
     return compacted

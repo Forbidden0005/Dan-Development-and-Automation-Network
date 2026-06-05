@@ -17,30 +17,40 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # ── Tool Registry Tests ─────────────────────────────────────────────────────
 
+
 class TestToolRegistry:
     def setup_method(self):
         import tool_registry as reg
+
         reg._TOOLS.clear()
 
     def test_register_and_get(self):
         import tool_registry as reg
+
         reg.register("TestTool", "A test", {"type": "object", "properties": {}}, lambda: "ok")
         assert reg.get_tool("TestTool") is not None
         assert reg.get_tool("NoTool") is None
 
     def test_execute(self):
         import tool_registry as reg
-        reg.register("Echo", "Echo", {"type": "object", "properties": {"msg": {"type": "string"}}},
-                      lambda msg="": f"echo: {msg}")
+
+        reg.register(
+            "Echo",
+            "Echo",
+            {"type": "object", "properties": {"msg": {"type": "string"}}},
+            lambda msg="": f"echo: {msg}",
+        )
         assert reg.execute_tool("Echo", {"msg": "hello"}) == "echo: hello"
 
     def test_execute_unknown(self):
         import tool_registry as reg
+
         result = reg.execute_tool("NonExistent", {})
         assert "Unknown tool" in result
 
     def test_schemas(self):
         import tool_registry as reg
+
         reg.register("T1", "Desc", {"type": "object"}, lambda: "")
         schemas = reg.get_tool_schemas()
         assert len(schemas) == 1
@@ -48,6 +58,7 @@ class TestToolRegistry:
 
     def test_categories(self):
         import tool_registry as reg
+
         reg.register("A", "", {"type": "object"}, lambda: "", category="core")
         reg.register("B", "", {"type": "object"}, lambda: "", category="web")
         cats = reg.list_by_category()
@@ -57,15 +68,18 @@ class TestToolRegistry:
 
 # ── Core Tools Tests ─────────────────────────────────────────────────────────
 
+
 class TestCoreTools:
     def setup_method(self):
         self.tmpdir = tempfile.mkdtemp()
         # Patch security validator to allow temp directories for testing
         import tools
+
         tools._path_validator = tools.SecurePathValidator(allowed_roots=[self.tmpdir, "/"])
 
     def test_read_file(self):
         from tools import read_file
+
         fp = Path(self.tmpdir) / "test.txt"
         fp.write_text("line1\nline2\nline3")
         result = read_file(str(fp))
@@ -74,11 +88,13 @@ class TestCoreTools:
 
     def test_read_file_not_found(self):
         from tools import read_file
+
         result = read_file("/nonexistent/file.txt")
         assert "Error" in result or "Security error" in result
 
     def test_read_with_offset(self):
         from tools import read_file
+
         fp = Path(self.tmpdir) / "test.txt"
         fp.write_text("a\nb\nc\nd\ne")
         result = read_file(str(fp), offset=2, limit=2)
@@ -87,6 +103,7 @@ class TestCoreTools:
 
     def test_write_file(self):
         from tools import write_file
+
         fp = Path(self.tmpdir) / "out.txt"
         result = write_file(str(fp), "hello world")
         assert "✓" in result
@@ -94,12 +111,14 @@ class TestCoreTools:
 
     def test_write_creates_dirs(self):
         from tools import write_file
+
         fp = Path(self.tmpdir) / "sub" / "dir" / "file.txt"
         write_file(str(fp), "nested")
         assert fp.read_text() == "nested"
 
     def test_edit_file(self):
         from tools import edit_file
+
         fp = Path(self.tmpdir) / "edit.txt"
         fp.write_text("foo bar baz")
         result = edit_file(str(fp), "bar", "qux")
@@ -108,6 +127,7 @@ class TestCoreTools:
 
     def test_edit_not_found(self):
         from tools import edit_file
+
         fp = Path(self.tmpdir) / "edit.txt"
         fp.write_text("hello")
         result = edit_file(str(fp), "xyz", "abc")
@@ -115,6 +135,7 @@ class TestCoreTools:
 
     def test_edit_ambiguous(self):
         from tools import edit_file
+
         fp = Path(self.tmpdir) / "edit.txt"
         fp.write_text("aaa aaa")
         result = edit_file(str(fp), "aaa", "bbb")
@@ -122,6 +143,7 @@ class TestCoreTools:
 
     def test_bash(self):
         from tools import run_bash
+
         result = run_bash("echo hello")
         assert "hello" in result
 
@@ -143,8 +165,10 @@ class TestCoreTools:
 
     def test_bash_timeout(self):
         from tools import run_bash
+
         # Override the executor timeout for this test
         import tools
+
         old_timeout = tools._command_executor.max_execution_time
         tools._command_executor.max_execution_time = 1
         result = run_bash("sleep 5")
@@ -153,11 +177,13 @@ class TestCoreTools:
 
     def test_bash_blocked(self):
         from tools import run_bash
+
         result = run_bash("rm -rf /")
         assert "Blocked" in result
 
     def test_glob(self):
         from tools import glob_files
+
         (Path(self.tmpdir) / "a.py").touch()
         (Path(self.tmpdir) / "b.py").touch()
         (Path(self.tmpdir) / "c.txt").touch()
@@ -168,6 +194,7 @@ class TestCoreTools:
 
     def test_grep(self):
         from tools import grep_search
+
         fp = Path(self.tmpdir) / "code.py"
         fp.write_text("def hello():\n    return 42\n")
         result = grep_search("hello", self.tmpdir)
@@ -185,6 +212,7 @@ class TestCoreTools:
 
     def test_list_dir(self):
         from tools import list_directory
+
         (Path(self.tmpdir) / "file.txt").touch()
         (Path(self.tmpdir) / "sub").mkdir()
         result = list_directory(self.tmpdir)
@@ -204,12 +232,15 @@ class TestCoreTools:
 
 # ── Knowledge Tests ──────────────────────────────────────────────────────────
 
+
 class TestKnowledge:
     def setup_method(self):
         import shutil
+
         self.tmpdir = tempfile.mkdtemp()
         # Patch config paths
         import config
+
         self._orig_user = config.USER_DATA_DIR
         self._orig_project = config.PROJECT_DATA_DIR
         config.USER_DATA_DIR = Path(self.tmpdir) / "user"
@@ -217,12 +248,14 @@ class TestKnowledge:
 
     def teardown_method(self):
         import shutil, config
+
         config.USER_DATA_DIR = self._orig_user
         config.PROJECT_DATA_DIR = self._orig_project
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_save_and_load(self):
         from knowledge import KnowledgeEntry, save, load
+
         entry = KnowledgeEntry(name="test", content="hello", scope="user")
         save(entry)
         loaded = load("test", "user")
@@ -231,12 +264,14 @@ class TestKnowledge:
 
     def test_delete(self):
         from knowledge import KnowledgeEntry, save, load, delete
+
         save(KnowledgeEntry(name="del", content="bye", scope="user"))
         delete("del", "user")
         assert load("del", "user") is None
 
     def test_search(self):
         from knowledge import KnowledgeEntry, save, search
+
         save(KnowledgeEntry(name="py", content="Python is great", scope="user"))
         save(KnowledgeEntry(name="js", content="JavaScript too", scope="user"))
         results = search("python")
@@ -245,6 +280,7 @@ class TestKnowledge:
 
     def test_list_all(self):
         from knowledge import KnowledgeEntry, save, list_all
+
         save(KnowledgeEntry(name="a", content="aaa", scope="user"))
         save(KnowledgeEntry(name="b", content="bbb", scope="project"))
         entries = list_all()
@@ -252,6 +288,7 @@ class TestKnowledge:
 
     def test_context_block(self):
         from knowledge import KnowledgeEntry, save, get_context_block
+
         save(KnowledgeEntry(name="ctx", content="context data", scope="user"))
         block = get_context_block()
         assert "<knowledge>" in block
@@ -260,18 +297,22 @@ class TestKnowledge:
 
 # ── Context Manager Tests ────────────────────────────────────────────────────
 
+
 class TestContextManager:
     def test_estimate_tokens(self):
         from context_mgr import estimate_tokens
+
         assert estimate_tokens("hello world") > 0
 
     def test_needs_compaction_false(self):
         from context_mgr import needs_compaction
+
         messages = [{"role": "user", "content": "hi"}]
         assert not needs_compaction(messages, 200_000)
 
     def test_needs_compaction_true(self):
         from context_mgr import needs_compaction
+
         big = "x" * 600_000  # way over threshold
         messages = [{"role": "user", "content": big}]
         assert needs_compaction(messages, 200_000)
@@ -279,35 +320,42 @@ class TestContextManager:
 
 # ── Actions Tests ────────────────────────────────────────────────────────────
 
+
 class TestActions:
     def test_builtin_actions(self):
         from actions import get_all_actions, get_action
+
         actions = get_all_actions()
         assert "commit" in actions
         assert "review" in actions
 
     def test_get_action(self):
         from actions import get_action
+
         action = get_action("commit")
         assert action is not None
         assert "git" in action.prompt.lower()
 
     def test_unknown_action(self):
         from actions import get_action
+
         assert get_action("nonexistent") is None
 
 
 # ── Workers Tests ────────────────────────────────────────────────────────────
 
+
 class TestWorkers:
     def test_spawn_no_agent(self):
         from workers import WorkerPool
+
         pool = WorkerPool()
         task = pool.spawn("test prompt")
         assert task.status == "error"
 
     def test_spawn_with_agent(self):
         from workers import WorkerPool
+
         pool = WorkerPool()
         task = pool.spawn("test", wait=True, agent_fn=lambda p: f"done: {p}")
         assert task.status == "done"
@@ -315,6 +363,7 @@ class TestWorkers:
 
     def test_list_tasks(self):
         from workers import WorkerPool
+
         pool = WorkerPool()
         pool.spawn("a")
         pool.spawn("b")
@@ -322,6 +371,7 @@ class TestWorkers:
 
     def test_get_task(self):
         from workers import WorkerPool
+
         pool = WorkerPool()
         task = pool.spawn("find me")
         found = pool.get_task(task.id)
@@ -331,9 +381,11 @@ class TestWorkers:
 
 # ── Provider Tests ───────────────────────────────────────────────────────────
 
+
 class TestProviders:
     def test_message_to_dict(self):
         from providers import Message
+
         m = Message(role="user", content="hello")
         d = m.to_dict()
         assert d["role"] == "user"
@@ -341,12 +393,14 @@ class TestProviders:
 
     def test_response_defaults(self):
         from providers import Response
+
         r = Response()
         assert r.text == ""
         assert r.tool_calls == []
 
     def test_get_provider_unknown(self):
         from providers import get_provider
+
         with pytest.raises(ValueError, match="Unknown provider"):
             get_provider("fakeprovider")
 
@@ -408,7 +462,9 @@ class TestAgent:
     def test_extract_text_tool_call_rescues_valid_json(self, monkeypatch):
         import agent
 
-        monkeypatch.setattr(agent.registry, "get_tool", lambda name: object() if name == "Read" else None)
+        monkeypatch.setattr(
+            agent.registry, "get_tool", lambda name: object() if name == "Read" else None
+        )
 
         tool_call = agent._extract_text_tool_call('{"name":"Read","input":{"path":"file.txt"}}')
 
@@ -454,7 +510,9 @@ class TestAgent:
         monkeypatch.setattr(agent, "select_tool_categories", lambda user_input: {"core"})
         monkeypatch.setattr(agent.registry, "get_schemas_for_categories", lambda categories: [])
         monkeypatch.setattr(agent, "needs_compaction", lambda messages, limit: False)
-        monkeypatch.setattr(agent.cost_tracker, "record", lambda inp, out: recorded.append((inp, out)))
+        monkeypatch.setattr(
+            agent.cost_tracker, "record", lambda inp, out: recorded.append((inp, out))
+        )
 
         result, updated = agent.run_agent_loop("hello", [], FakeProvider())
 
@@ -485,7 +543,9 @@ class TestAgent:
         progress = []
         monkeypatch.setattr(agent, "build_system_prompt", lambda: "system")
         monkeypatch.setattr(agent, "select_tool_categories", lambda user_input: {"core"})
-        monkeypatch.setattr(agent.registry, "get_schemas_for_categories", lambda categories: [{"name": "Read"}])
+        monkeypatch.setattr(
+            agent.registry, "get_schemas_for_categories", lambda categories: [{"name": "Read"}]
+        )
         monkeypatch.setattr(agent.registry, "execute_tool", lambda name, inp: f"read {inp['path']}")
         monkeypatch.setattr(agent, "needs_compaction", lambda messages, limit: False)
         monkeypatch.setattr(agent.cost_tracker, "record", lambda inp, out: None)
@@ -592,7 +652,10 @@ class TestDanCli:
         monkeypatch.setattr(
             Dan.session_mgr,
             "load",
-            lambda name: ([{"role": "assistant", "content": "loaded"}], {"name": "demo", "provider": "ollama", "model": "qwen"}),
+            lambda name: (
+                [{"role": "assistant", "content": "loaded"}],
+                {"name": "demo", "provider": "ollama", "model": "qwen"},
+            ),
         )
 
         result = Dan.handle_slash_command("/session load demo", messages, provider=object())
@@ -650,7 +713,9 @@ class TestSessionManager:
         monkeypatch.setattr(session_mgr, "SESSIONS_DIR", tmp_path / "sessions")
         messages = [{"role": "user", "content": "hello"}]
 
-        result = session_mgr.save(messages, "ollama", "qwen", name="my unsafe:/session", session_id="abc123")
+        result = session_mgr.save(
+            messages, "ollama", "qwen", name="my unsafe:/session", session_id="abc123"
+        )
         loaded = session_mgr.load("my_unsafesession")
 
         assert "my_unsafesession.json" in result
@@ -662,7 +727,9 @@ class TestSessionManager:
         import session_mgr
 
         outside = tmp_path / "outside.json"
-        outside.write_text('{"messages": [{"role": "user", "content": "outside"}]}', encoding="utf-8")
+        outside.write_text(
+            '{"messages": [{"role": "user", "content": "outside"}]}', encoding="utf-8"
+        )
         monkeypatch.setattr(session_mgr, "SESSIONS_DIR", tmp_path / "sessions")
 
         assert session_mgr.load("../outside") is None
@@ -672,9 +739,13 @@ class TestSessionManager:
         import session_mgr
 
         outside = tmp_path / "outside.json"
-        outside.write_text('{"messages": [{"role": "user", "content": "outside"}]}', encoding="utf-8")
+        outside.write_text(
+            '{"messages": [{"role": "user", "content": "outside"}]}', encoding="utf-8"
+        )
         monkeypatch.setattr(session_mgr, "SESSIONS_DIR", tmp_path / "sessions")
-        session_mgr.save([{"role": "user", "content": "saved"}], "ollama", "qwen", name="named", session_id="1")
+        session_mgr.save(
+            [{"role": "user", "content": "saved"}], "ollama", "qwen", name="named", session_id="1"
+        )
 
         assert session_mgr.delete("../outside") is False
         assert session_mgr.delete(str(outside)) is False
@@ -695,7 +766,9 @@ class TestSessionManager:
         import session_mgr
 
         monkeypatch.setattr(session_mgr, "SESSIONS_DIR", tmp_path / "sessions")
-        session_mgr.save([{"role": "user", "content": "saved"}], "ollama", "qwen", name="named", session_id="1")
+        session_mgr.save(
+            [{"role": "user", "content": "saved"}], "ollama", "qwen", name="named", session_id="1"
+        )
         session_mgr.auto_save([{"role": "user", "content": "auto"}], "ollama", "qwen", "2")
 
         sessions = session_mgr.list_sessions()
@@ -710,7 +783,9 @@ class TestSessionManager:
 
         monkeypatch.setattr(session_mgr, "SESSIONS_DIR", tmp_path / "sessions")
         empty = session_mgr.format_sessions_table()
-        session_mgr.save([{"role": "user", "content": "saved"}], "ollama", "qwen", name="named", session_id="1")
+        session_mgr.save(
+            [{"role": "user", "content": "saved"}], "ollama", "qwen", name="named", session_id="1"
+        )
         table = session_mgr.format_sessions_table()
 
         assert "No saved sessions found" in empty
@@ -810,10 +885,18 @@ class TestWebTools:
         json_response = FakeResponse("application/json", payload={"ok": True})
         binary_response = FakeResponse("application/octet-stream", content=b"123456")
 
-        monkeypatch.setitem(sys.modules, "httpx", type("Httpx", (), {"Client": lambda *args, **kwargs: FakeClient(json_response)}))
+        monkeypatch.setitem(
+            sys.modules,
+            "httpx",
+            type("Httpx", (), {"Client": lambda *args, **kwargs: FakeClient(json_response)}),
+        )
         assert '"ok": true' in web.web_fetch("https://example.com")
 
-        monkeypatch.setitem(sys.modules, "httpx", type("Httpx", (), {"Client": lambda *args, **kwargs: FakeClient(binary_response)}))
+        monkeypatch.setitem(
+            sys.modules,
+            "httpx",
+            type("Httpx", (), {"Client": lambda *args, **kwargs: FakeClient(binary_response)}),
+        )
         assert "Binary content" in web.web_fetch("https://example.com/file")
 
     def test_web_fetch_rejects_local_and_non_http_urls(self):
@@ -827,7 +910,9 @@ class TestWebTools:
         import web
 
         registered = []
-        monkeypatch.setattr(web.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            web.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
 
         web.register_web_tools()
 
@@ -870,7 +955,10 @@ class TestSecurityUtilsMore:
         ]
         assert executor._needs_windows_shell("echo hello")
         assert executor._base_command("C:\\Python\\python.exe script.py") == "python"
-        assert executor._base_command('"C:\\Program Files\\Python311\\python.exe" -m pytest') == "python"
+        assert (
+            executor._base_command('"C:\\Program Files\\Python311\\python.exe" -m pytest')
+            == "python"
+        )
         assert executor._get_restricted_env()["PATH"] == "C:\\Tools"
 
     def test_secure_command_executor_validate_command_blocks_dangerous_pattern(self):
@@ -891,7 +979,9 @@ class TestSecurityUtilsMore:
     def test_http_request_rejects_bad_method_and_local_url(self):
         import tools
 
-        assert "unsupported HTTP method" in tools.http_request("https://example.com", method="trace")
+        assert "unsupported HTTP method" in tools.http_request(
+            "https://example.com", method="trace"
+        )
         assert "local network address" in tools.http_request("http://127.0.0.1:8000", method="GET")
 
 
@@ -913,7 +1003,9 @@ class TestCoreToolsMore:
     def test_read_file_truncates_large_line_output(self, monkeypatch, tmp_path):
         import tools
 
-        monkeypatch.setattr(tools, "_path_validator", tools.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            tools, "_path_validator", tools.SecurePathValidator(allowed_roots=[str(tmp_path)])
+        )
         file_path = tmp_path / "big.txt"
         file_path.write_text("\n".join(f"line {i}" for i in range(10005)), encoding="utf-8")
 
@@ -925,18 +1017,26 @@ class TestCoreToolsMore:
         import tools
 
         registered = []
-        monkeypatch.setattr(tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
 
         tools.register_core_tools()
 
-        assert {"Read", "Write", "Edit", "Bash", "Glob", "Grep", "ListDir"}.issubset(set(registered))
+        assert {"Read", "Write", "Edit", "Bash", "Glob", "Grep", "ListDir"}.issubset(
+            set(registered)
+        )
 
 
 class TestSecureTools:
     def test_secure_glob_and_grep_behaviors(self, monkeypatch, tmp_path):
         import tools_secure
 
-        monkeypatch.setattr(tools_secure, "_path_validator", tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            tools_secure,
+            "_path_validator",
+            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
         root = tmp_path / "proj"
         root.mkdir()
         (root / "a.py").write_text("print('hello')\nvalue = 1\n", encoding="utf-8")
@@ -951,7 +1051,11 @@ class TestSecureTools:
     def test_secure_list_directory_and_register(self, monkeypatch, tmp_path):
         import tools_secure
 
-        monkeypatch.setattr(tools_secure, "_path_validator", tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            tools_secure,
+            "_path_validator",
+            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
         root = tmp_path / "proj"
         (root / "sub").mkdir(parents=True)
         (root / "sub" / "file.txt").write_text("x", encoding="utf-8")
@@ -961,10 +1065,16 @@ class TestSecureTools:
         assert "file.txt" in listing
 
         registered = []
-        monkeypatch.setattr(tools_secure.registry, "register_tool", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            tools_secure.registry,
+            "register_tool",
+            lambda **kwargs: registered.append(kwargs["name"]),
+        )
         tools_secure.register_secure_core_tools()
 
-        assert {"Read", "Write", "Edit", "Bash", "Glob", "Grep", "ListDir"}.issubset(set(registered))
+        assert {"Read", "Write", "Edit", "Bash", "Glob", "Grep", "ListDir"}.issubset(
+            set(registered)
+        )
 
 
 class TestProviderModules:
@@ -986,7 +1096,12 @@ class TestProviderModules:
                 tool_call = type(
                     "ToolCallObj",
                     (),
-                    {"id": "call-1", "function": type("Fn", (), {"name": "Read", "arguments": '{"path":"demo.txt"}'})()},
+                    {
+                        "id": "call-1",
+                        "function": type(
+                            "Fn", (), {"name": "Read", "arguments": '{"path":"demo.txt"}'}
+                        )(),
+                    },
                 )()
                 message = type("Msg", (), {"content": "Done", "tool_calls": [tool_call]})()
                 choice = type("Choice", (), {"message": message, "finish_reason": "stop"})()
@@ -1004,7 +1119,11 @@ class TestProviderModules:
         monkeypatch.setattr(provider_openai, "KeyRotator", lambda prefix: FakeRotator())
 
         provider = provider_openai.OpenAIProvider("gpt-4o")
-        response = provider.chat([Message(role="user", content="hello")], system="sys", tools=[{"name": "Read", "input_schema": {}}])
+        response = provider.chat(
+            [Message(role="user", content="hello")],
+            system="sys",
+            tools=[{"name": "Read", "input_schema": {}}],
+        )
 
         assert response.text == "Done"
         assert response.tool_calls[0].name == "Read"
@@ -1029,7 +1148,10 @@ class TestProviderModules:
                 tool_call = type(
                     "ToolCallObj",
                     (),
-                    {"id": "call-1", "function": type("Fn", (), {"name": "Read", "arguments": "{"})()},
+                    {
+                        "id": "call-1",
+                        "function": type("Fn", (), {"name": "Read", "arguments": "{"})(),
+                    },
                 )()
                 message = type("Msg", (), {"content": "", "tool_calls": [tool_call]})()
                 choice = type("Choice", (), {"message": message, "finish_reason": "tool_calls"})()
@@ -1138,7 +1260,9 @@ class TestProviderModules:
         provider = provider_anthropic.AnthropicProvider("claude-sonnet-4-6")
         chat_response = provider.chat([Message(role="user", content="hello")])
         streamed = []
-        stream_response = provider.chat_stream([Message(role="user", content="hello")], on_text=streamed.append)
+        stream_response = provider.chat_stream(
+            [Message(role="user", content="hello")], on_text=streamed.append
+        )
 
         assert chat_response.text == "Answer"
         assert chat_response.tool_calls[0].name == "Read"
@@ -1209,12 +1333,26 @@ class TestProviderModules:
         from providers import Message
 
         messages = [
-            Message(role="assistant", content=[{"type": "text", "text": "Hi"}, {"type": "tool_use", "name": "Read", "input": {"path": "a.txt"}}]),
-            Message(role="user", content=[{"type": "tool_result", "content": "ok"}, {"type": "text", "text": "next"}]),
+            Message(
+                role="assistant",
+                content=[
+                    {"type": "text", "text": "Hi"},
+                    {"type": "tool_use", "name": "Read", "input": {"path": "a.txt"}},
+                ],
+            ),
+            Message(
+                role="user",
+                content=[
+                    {"type": "tool_result", "content": "ok"},
+                    {"type": "text", "text": "next"},
+                ],
+            ),
         ]
 
         converted = provider_ollama.OllamaProvider._to_ollama_messages(messages, "system")
-        parsed = provider_ollama.OllamaProvider._parse_tool_calls({"tool_calls": [{"function": {"name": "Read", "arguments": '{"path":"a.txt"}'}}]})
+        parsed = provider_ollama.OllamaProvider._parse_tool_calls(
+            {"tool_calls": [{"function": {"name": "Read", "arguments": '{"path":"a.txt"}'}}]}
+        )
 
         assert converted[0]["role"] == "system"
         assert converted[1]["tool_calls"][0]["function"]["name"] == "Read"
@@ -1243,7 +1381,9 @@ class TestProviderModules:
 
         monkeypatch.setitem(sys.modules, "httpx", StreamFailureHttpx)
         provider = provider_ollama.OllamaProvider("llama3.1")
-        response = provider.chat_stream([Message(role="user", content="hello")], on_text=lambda chunk: None)
+        response = provider.chat_stream(
+            [Message(role="user", content="hello")], on_text=lambda chunk: None
+        )
 
         assert response.text == "Fallback"
         assert response.usage == {"input": 2, "output": 3}
@@ -1252,14 +1392,65 @@ class TestProviderModules:
         import provider_venice
         from providers import Message
 
-        monkeypatch.setitem(sys.modules, "openai", type("OpenAIStub", (), {"OpenAI": lambda **kwargs: type("Client", (), {"chat": type("Chat", (), {"completions": type("Comp", (), {"create": lambda self, **kw: type(
-            "Result",
-            (),
-            {
-                "choices": [type("Choice", (), {"message": type("Msg", (), {"content": "<think>secret</think>Visible", "tool_calls": None})(), "finish_reason": "stop"})()],
-                "usage": type("Usage", (), {"prompt_tokens": 1, "completion_tokens": 2})(),
-            },
-        )()})()})()})}))
+        monkeypatch.setitem(
+            sys.modules,
+            "openai",
+            type(
+                "OpenAIStub",
+                (),
+                {
+                    "OpenAI": lambda **kwargs: type(
+                        "Client",
+                        (),
+                        {
+                            "chat": type(
+                                "Chat",
+                                (),
+                                {
+                                    "completions": type(
+                                        "Comp",
+                                        (),
+                                        {
+                                            "create": lambda self, **kw: type(
+                                                "Result",
+                                                (),
+                                                {
+                                                    "choices": [
+                                                        type(
+                                                            "Choice",
+                                                            (),
+                                                            {
+                                                                "message": type(
+                                                                    "Msg",
+                                                                    (),
+                                                                    {
+                                                                        "content": "<think>secret</think>Visible",
+                                                                        "tool_calls": None,
+                                                                    },
+                                                                )(),
+                                                                "finish_reason": "stop",
+                                                            },
+                                                        )()
+                                                    ],
+                                                    "usage": type(
+                                                        "Usage",
+                                                        (),
+                                                        {
+                                                            "prompt_tokens": 1,
+                                                            "completion_tokens": 2,
+                                                        },
+                                                    )(),
+                                                },
+                                            )()
+                                        },
+                                    )()
+                                },
+                            )()
+                        },
+                    )
+                },
+            ),
+        )
 
         monkeypatch.setenv("VENICE_API_KEY", "venice-key")
         provider = provider_venice.VeniceProvider("llama-3.3-70b")
@@ -1282,7 +1473,10 @@ class TestProviderModules:
                 tool_call = type(
                     "ToolCallObj",
                     (),
-                    {"id": "call-1", "function": type("Fn", (), {"name": "Read", "arguments": "["})()},
+                    {
+                        "id": "call-1",
+                        "function": type("Fn", (), {"name": "Read", "arguments": "["})(),
+                    },
                 )()
                 message = type("Msg", (), {"content": "", "tool_calls": [tool_call]})()
                 choice = type("Choice", (), {"message": message, "finish_reason": "tool_calls"})()
@@ -1334,7 +1528,10 @@ class TestContextAndRegistry:
     def test_context_manager_estimation_and_threshold(self, monkeypatch):
         import context_mgr
 
-        messages = [{"role": "user", "content": "abcd"}, {"role": "assistant", "content": [{"type": "text", "text": "hello"}]}]
+        messages = [
+            {"role": "user", "content": "abcd"},
+            {"role": "assistant", "content": [{"type": "text", "text": "hello"}]},
+        ]
         total = context_mgr.estimate_messages_tokens(messages)
 
         assert total > 0
@@ -1358,26 +1555,52 @@ class TestCodeExecutionBundle:
     def test_code_execution_helpers(self, monkeypatch, tmp_path):
         import code_execution
 
-        monkeypatch.setattr(code_execution, "_path_validator", code_execution.SecurePathValidator(allowed_roots=[str(tmp_path)]))
-        monkeypatch.setattr(code_execution.shutil, "which", lambda name: None if name == "python" else "C:/Windows/py.exe")
+        monkeypatch.setattr(
+            code_execution,
+            "_path_validator",
+            code_execution.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
+        monkeypatch.setattr(
+            code_execution.shutil,
+            "which",
+            lambda name: None if name == "python" else "C:/Windows/py.exe",
+        )
 
         assert code_execution._detect_lang_from_ext(Path("demo.py")) == "python"
-        assert code_execution._detect_lang_from_shebang("#!/usr/bin/env python\nprint('x')") == "python"
+        assert (
+            code_execution._detect_lang_from_shebang("#!/usr/bin/env python\nprint('x')")
+            == "python"
+        )
         assert code_execution._bounded_timeout(999) == 120
         assert code_execution._split_args("--flag value") == ["--flag", "value"]
         assert code_execution._command_to_string(["python", "demo.py"])
-        assert code_execution._safe_path(str(tmp_path / "ok.txt")) == (tmp_path / "ok.txt").resolve()
+        assert (
+            code_execution._safe_path(str(tmp_path / "ok.txt")) == (tmp_path / "ok.txt").resolve()
+        )
         assert code_execution._resolve_python_command() == ["py"]
-        assert code_execution._resolve_interpreter_command(["python", "-m", "pytest"]) == ["py", "-m", "pytest"]
+        assert code_execution._resolve_interpreter_command(["python", "-m", "pytest"]) == [
+            "py",
+            "-m",
+            "pytest",
+        ]
 
     def test_run_code_and_run_file_paths(self, monkeypatch, tmp_path):
         import code_execution
 
-        monkeypatch.setattr(code_execution, "_path_validator", code_execution.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            code_execution,
+            "_path_validator",
+            code_execution.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
         monkeypatch.setattr(
             code_execution,
             "_run_proc",
-            lambda cmd, cwd=None, stdin_text="", timeout=30, validate_command=True: (0, "stdout", "", 0.25),
+            lambda cmd, cwd=None, stdin_text="", timeout=30, validate_command=True: (
+                0,
+                "stdout",
+                "",
+                0.25,
+            ),
         )
 
         result = code_execution.run_code("print('hi')", language="python")
@@ -1392,20 +1615,33 @@ class TestCodeExecutionBundle:
     def test_test_loop_and_iterate_fix_branches(self, monkeypatch, tmp_path):
         import code_execution
 
-        monkeypatch.setattr(code_execution, "_path_validator", code_execution.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            code_execution,
+            "_path_validator",
+            code_execution.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
         root = tmp_path / "proj"
         root.mkdir()
         (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
 
-        monkeypatch.setattr(code_execution, "_run_pytest", lambda root, extra, timeout: "pytest-results")
+        monkeypatch.setattr(
+            code_execution, "_run_pytest", lambda root, extra, timeout: "pytest-results"
+        )
         assert code_execution.test_loop(str(root)) == "pytest-results"
 
         monkeypatch.setattr(
             code_execution,
             "_run_proc",
-            lambda cmd, cwd=None, stdin_text="", timeout=30, validate_command=True: (1, "", "boom", 0.5),
+            lambda cmd, cwd=None, stdin_text="", timeout=30, validate_command=True: (
+                1,
+                "",
+                "boom",
+                0.5,
+            ),
         )
-        monkeypatch.setattr(code_execution._command_validator, "validate_command", lambda command: None)
+        monkeypatch.setattr(
+            code_execution._command_validator, "validate_command", lambda command: None
+        )
         result = code_execution.iterate_fix("python demo.py", working_dir=str(root), max_tries=2)
 
         assert "Attempt 1/2 failed" in result
@@ -1415,7 +1651,9 @@ class TestCodeExecutionBundle:
         import code_execution
 
         registered = []
-        monkeypatch.setattr(code_execution.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            code_execution.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
 
         code_execution.register_execution_tools()
 
@@ -1430,7 +1668,11 @@ class TestCodeToolsBundle:
         root.mkdir()
         (root / "tests").mkdir()
         (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-        monkeypatch.setattr(code_tools.shutil, "which", lambda name: None if name == "python" else "C:/Windows/py.exe")
+        monkeypatch.setattr(
+            code_tools.shutil,
+            "which",
+            lambda name: None if name == "python" else "C:/Windows/py.exe",
+        )
         monkeypatch.setattr(
             code_tools.importlib.util,
             "find_spec",
@@ -1473,15 +1715,17 @@ class TestCodeToolsBundle:
             "import os\n\n# TODO: fix\n\ndef demo():\n    pass\n\nx = demo()\n",
             encoding="utf-8",
         )
-        (root / "requirements.txt").write_text("-r requirements-core.txt\nrequests>=2\n", encoding="utf-8")
+        (root / "requirements.txt").write_text(
+            "-r requirements-core.txt\nrequests>=2\n", encoding="utf-8"
+        )
         (root / "requirements-core.txt").write_text("missing_pkg\n", encoding="utf-8")
         (root / "pyproject.toml").write_text(
             "[project]\n"
             "dependencies = [\n"
-            "  \"tomli>=2\",\n"
+            '  "tomli>=2",\n'
             "]\n"
             "[tool.pytest.ini_options]\n"
-            "testpaths = [\"tests\"]\n",
+            'testpaths = ["tests"]\n',
             encoding="utf-8",
         )
 
@@ -1490,8 +1734,11 @@ class TestCodeToolsBundle:
         analysis = code_tools.analyze_code(str(root))
 
         import importlib.util
+
         original_find_spec = importlib.util.find_spec
-        monkeypatch.setattr(importlib.util, "find_spec", lambda name: object() if name == "requests" else None)
+        monkeypatch.setattr(
+            importlib.util, "find_spec", lambda name: object() if name == "requests" else None
+        )
         deps = code_tools.check_deps(str(root))
         monkeypatch.setattr(importlib.util, "find_spec", original_find_spec)
 
@@ -1515,7 +1762,9 @@ class TestCodeToolsBundle:
         (root / "requirements-core.txt").write_text("httpx\nanthropic\n", encoding="utf-8")
 
         monkeypatch.setattr(code_tools.sys, "executable", "")
-        monkeypatch.setattr(code_tools.shutil, "which", lambda name: "C:/Windows/py.exe" if name == "py" else None)
+        monkeypatch.setattr(
+            code_tools.shutil, "which", lambda name: "C:/Windows/py.exe" if name == "py" else None
+        )
         monkeypatch.setattr(
             code_tools.importlib.util,
             "find_spec",
@@ -1554,7 +1803,9 @@ class TestCodeToolsBundle:
             return None
 
         monkeypatch.setattr(code_tools.importlib.util, "find_spec", fake_find_spec)
-        monkeypatch.setattr(code_tools, "run_tests", lambda path, framework="", args="", timeout=60: "tests-ok")
+        monkeypatch.setattr(
+            code_tools, "run_tests", lambda path, framework="", args="", timeout=60: "tests-ok"
+        )
         monkeypatch.setattr(code_tools, "lint_check", lambda path, tool="", fix=False: "lint-ok")
 
         report = code_tools.repo_health(str(tmp_path), provider="ollama", timeout=45)
@@ -1585,7 +1836,7 @@ class TestCodeToolsBundle:
         assert "Missing:   0" in report
         assert "Runtime dependencies are installed." in report
         assert "Undeclared imports: 0" in report
-    
+
     def test_check_deps_uses_resolved_python_launcher_for_install_hint(self, tmp_path, monkeypatch):
         import code_tools
 
@@ -1602,7 +1853,9 @@ class TestCodeToolsBundle:
 
         (tmp_path / "requirements.txt").write_text("-r requirements-core.txt\n", encoding="utf-8")
         (tmp_path / "requirements-core.txt").write_text("httpx\n", encoding="utf-8")
-        (tmp_path / "requirements-ml.txt").write_text("-r requirements-core.txt\npandas\nnumpy\n", encoding="utf-8")
+        (tmp_path / "requirements-ml.txt").write_text(
+            "-r requirements-core.txt\npandas\nnumpy\n", encoding="utf-8"
+        )
 
         monkeypatch.setattr(code_tools, "_python_cmd", lambda: ["py"])
         monkeypatch.setattr(
@@ -1624,11 +1877,24 @@ class TestCodeToolsBundle:
         import code_tools
 
         registered = []
-        monkeypatch.setattr(code_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            code_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
 
         code_tools.register_code_tools()
 
-        assert {"RunTests", "LintCheck", "FormatCode", "FindUsages", "RefactorRename", "AnalyzeCode", "CheckDeps", "EnvironmentDoctor", "StartupDoctor", "RepoHealth"}.issubset(set(registered))
+        assert {
+            "RunTests",
+            "LintCheck",
+            "FormatCode",
+            "FindUsages",
+            "RefactorRename",
+            "AnalyzeCode",
+            "CheckDeps",
+            "EnvironmentDoctor",
+            "StartupDoctor",
+            "RepoHealth",
+        }.issubset(set(registered))
 
 
 class TestCliBootstrap:
@@ -1645,11 +1911,17 @@ class TestCliBootstrap:
             verbose = False
 
         monkeypatch.setattr(Dan.argparse.ArgumentParser, "parse_args", lambda self: Args())
-        monkeypatch.setattr(Dan, "repl", lambda provider, model, provider_name: captured.update({
-            "provider": provider_name,
-            "model": model,
-            "provider_model": getattr(provider, "model", ""),
-        }))
+        monkeypatch.setattr(
+            Dan,
+            "repl",
+            lambda provider, model, provider_name: captured.update(
+                {
+                    "provider": provider_name,
+                    "model": model,
+                    "provider_model": getattr(provider, "model", ""),
+                }
+            ),
+        )
         monkeypatch.setattr(Dan, "one_shot", lambda prompt, provider: None)
         monkeypatch.setattr(
             Dan,
@@ -1727,11 +1999,21 @@ class TestGitToolsBundle:
         import git_tools
 
         registered = []
-        monkeypatch.setattr(git_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            git_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
 
         git_tools.register_git_tools()
 
-        assert {"GitStatus", "GitDiff", "GitLog", "GitAdd", "GitCommit", "GitBranch", "GitStash"}.issubset(set(registered))
+        assert {
+            "GitStatus",
+            "GitDiff",
+            "GitLog",
+            "GitAdd",
+            "GitCommit",
+            "GitBranch",
+            "GitStash",
+        }.issubset(set(registered))
 
 
 class TestWorkersMore:
@@ -1862,7 +2144,14 @@ class TestDanGuiSupport:
 
 class TestDanGuiComponents:
     def test_components_module_exports_reusable_widgets(self):
-        from dan_gui_components import GradientStrip, LiveBubble, ThinkingDots, button, label, popup_base
+        from dan_gui_components import (
+            GradientStrip,
+            LiveBubble,
+            ThinkingDots,
+            button,
+            label,
+            popup_base,
+        )
 
         assert callable(popup_base)
         assert callable(label)
@@ -1891,7 +2180,9 @@ class TestApiConfigSecrets:
         config_file = tmp_path / "api_config.json"
         config_file.write_text(
             json.dumps(
-                {"venice": {"api_key": "legacy-secret", "model": "custom-model"}}  # pragma: allowlist secret
+                {
+                    "venice": {"api_key": "legacy-secret", "model": "custom-model"}
+                }  # pragma: allowlist secret
             ),
             encoding="utf-8",
         )
@@ -1914,7 +2205,9 @@ class TestApiConfigSecrets:
         assert "venice-s...2345" in shown
         assert "venice-secret-12345" not in shown
 
-    def test_save_config_strips_secret_fields_and_defaults_are_not_mutated(self, monkeypatch, tmp_path):
+    def test_save_config_strips_secret_fields_and_defaults_are_not_mutated(
+        self, monkeypatch, tmp_path
+    ):
         import api_config
 
         config_file = tmp_path / "api_config.json"
@@ -1944,7 +2237,11 @@ class TestAuthSystemHardening:
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
-        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+        monkeypatch.setitem(
+            auth_system.AUTH_CONFIG,
+            "bootstrap_admin_key_file",
+            tmp_path / "bootstrap_admin_key.txt",
+        )
         monkeypatch.delenv("DAN_AUTH_SALT", raising=False)
 
         manager = auth_system.AuthManager()
@@ -1963,7 +2260,11 @@ class TestAuthSystemHardening:
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
-        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+        monkeypatch.setitem(
+            auth_system.AUTH_CONFIG,
+            "bootstrap_admin_key_file",
+            tmp_path / "bootstrap_admin_key.txt",
+        )
         monkeypatch.delenv("DAN_AUTH_SALT", raising=False)
 
         first = auth_system.AuthManager()
@@ -1982,7 +2283,11 @@ class TestAuthSystemHardening:
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
-        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+        monkeypatch.setitem(
+            auth_system.AUTH_CONFIG,
+            "bootstrap_admin_key_file",
+            tmp_path / "bootstrap_admin_key.txt",
+        )
 
         manager = auth_system.AuthManager()
         submitted_key = "submitted-key-that-should-not-be-logged"
@@ -2003,7 +2308,11 @@ class TestAuthSystemHardening:
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
-        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+        monkeypatch.setitem(
+            auth_system.AUTH_CONFIG,
+            "bootstrap_admin_key_file",
+            tmp_path / "bootstrap_admin_key.txt",
+        )
 
         manager = auth_system.AuthManager()
         session = manager.authenticate("anything")
@@ -2020,12 +2329,23 @@ class TestAuthSystemHardening:
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
-        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+        monkeypatch.setitem(
+            auth_system.AUTH_CONFIG,
+            "bootstrap_admin_key_file",
+            tmp_path / "bootstrap_admin_key.txt",
+        )
 
         manager = auth_system.AuthManager()
         user = auth_system.User("demo", manager._hash_api_key("k"), ["developer"], created=1.0)
         manager.users = {"demo": user}
-        session = auth_system.Session("sid", "demo", created=100.0, expires=150.0, last_activity=100.0, permissions={"tools.read"})
+        session = auth_system.Session(
+            "sid",
+            "demo",
+            created=100.0,
+            expires=150.0,
+            last_activity=100.0,
+            permissions={"tools.read"},
+        )
         manager.sessions = {"sid": session}
         monkeypatch.setattr(auth_system.time, "time", lambda: 120.0)
 
@@ -2045,7 +2365,11 @@ class TestAuthSystemHardening:
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
-        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+        monkeypatch.setitem(
+            auth_system.AUTH_CONFIG,
+            "bootstrap_admin_key_file",
+            tmp_path / "bootstrap_admin_key.txt",
+        )
 
         manager = auth_system.AuthManager()
         session = auth_system.Session("sid", "demo", 0.0, 999.0, 0.0, {"tools.*", "knowledge.read"})
@@ -2066,7 +2390,11 @@ class TestAuthSystemHardening:
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "auth_database", tmp_path / "auth_data.json")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "audit_log", tmp_path / "auth_audit.log")
         monkeypatch.setitem(auth_system.AUTH_CONFIG, "salt_file", tmp_path / "auth_salt.bin")
-        monkeypatch.setitem(auth_system.AUTH_CONFIG, "bootstrap_admin_key_file", tmp_path / "bootstrap_admin_key.txt")
+        monkeypatch.setitem(
+            auth_system.AUTH_CONFIG,
+            "bootstrap_admin_key_file",
+            tmp_path / "bootstrap_admin_key.txt",
+        )
         monkeypatch.setattr(auth_system.time, "time", lambda: 100.0)
 
         manager = auth_system.AuthManager()
@@ -2089,7 +2417,11 @@ class TestAuthSystemHardening:
 
         session = auth_system.Session("sid", "demo", 0.0, 10.0, 0.0, {"tools.read"})
         setattr(secured, "_current_session", session)
-        monkeypatch.setattr(auth_system, "get_auth_manager", lambda: type("M", (), {"check_permission": lambda self, sess, perm: True})())
+        monkeypatch.setattr(
+            auth_system,
+            "get_auth_manager",
+            lambda: type("M", (), {"check_permission": lambda self, sess, perm: True})(),
+        )
         assert secured() == "ok"
 
         @auth_system.require_role(["admin"])
@@ -2100,12 +2432,15 @@ class TestAuthSystemHardening:
         monkeypatch.setattr(
             auth_system,
             "get_auth_manager",
-            lambda: type("Manager", (), {"users": {"demo": type("User", (), {"roles": ["admin"]})()}})(),
+            lambda: type(
+                "Manager", (), {"users": {"demo": type("User", (), {"roles": ["admin"]})()}}
+            )(),
         )
         assert role_secured() == "role-ok"
 
 
 # -- Structured Execution Security Tests -------------------------------------
+
 
 class TestCodeExecutionSecurity:
     def test_run_file_blocks_paths_outside_allowed_root(self, tmp_path, monkeypatch):
@@ -2214,7 +2549,9 @@ class TestAuthToolsBundle:
             (),
             {
                 "users": {"demo": type("User", (), {"roles": ["developer"]})()},
-                "authenticate": lambda self, api_key: type("Session", (), {"username": "demo"})() if api_key == "good-key" else None,
+                "authenticate": lambda self, api_key: (
+                    type("Session", (), {"username": "demo"})() if api_key == "good-key" else None
+                ),
             },
         )()
         monkeypatch.setattr(auth_tools, "get_auth_manager", lambda: auth_manager)
@@ -2247,8 +2584,21 @@ class TestAuthToolsBundle:
     def test_auth_tool_wrappers_cover_logout_status_create_and_permissions(self, monkeypatch):
         import auth_tools
 
-        session = type("Session", (), {"session_id": "sid", "username": "admin", "expires": 123.0, "permissions": {"knowledge.write", "tools.read"}})()
-        user = type("User", (), {"roles": ["admin"], "is_active": True, "locked_until": 0.0, "last_login": 99.0})()
+        session = type(
+            "Session",
+            (),
+            {
+                "session_id": "sid",
+                "username": "admin",
+                "expires": 123.0,
+                "permissions": {"knowledge.write", "tools.read"},
+            },
+        )()
+        user = type(
+            "User",
+            (),
+            {"roles": ["admin"], "is_active": True, "locked_until": 0.0, "last_login": 99.0},
+        )()
         auth_manager = type(
             "AuthManager",
             (),
@@ -2257,7 +2607,8 @@ class TestAuthToolsBundle:
                 "logout": lambda self, sid: None,
                 "get_auth_status": lambda self: {"total_users": 1, "active_sessions": 1},
                 "create_user": lambda self, username, roles, creator_username: "generated-key",
-                "check_permission": lambda self, sess, perm: perm in {"tools.read", "knowledge.write"},
+                "check_permission": lambda self, sess, perm: perm
+                in {"tools.read", "knowledge.write"},
             },
         )()
 
@@ -2286,7 +2637,9 @@ class TestAuthToolsBundle:
         import auth_tools
 
         session = type("Session", (), {"username": "admin"})()
-        auth_manager = type("AuthManager", (), {"users": {"admin": type("User", (), {"roles": ["admin"]})()}})()
+        auth_manager = type(
+            "AuthManager", (), {"users": {"admin": type("User", (), {"roles": ["admin"]})()}}
+        )()
         monkeypatch.setattr(auth_tools, "get_auth_manager", lambda: auth_manager)
         monkeypatch.setattr(auth_tools, "get_current_session", lambda: session)
         auth_tools.create_user._current_session = session
@@ -2294,11 +2647,20 @@ class TestAuthToolsBundle:
         invalid = auth_tools.create_user("new-user", "guest,invalid")
 
         registered = []
-        monkeypatch.setattr(auth_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            auth_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
         auth_tools.register_auth_tools()
 
         assert "Invalid roles" in invalid
-        assert {"LoginUser", "LogoutUser", "AuthStatus", "CreateUser", "ListUsers", "TestPermissions"}.issubset(set(registered))
+        assert {
+            "LoginUser",
+            "LogoutUser",
+            "AuthStatus",
+            "CreateUser",
+            "ListUsers",
+            "TestPermissions",
+        }.issubset(set(registered))
 
 
 class TestProjectContextBundle:
@@ -2338,7 +2700,9 @@ class TestProjectContextBundle:
         import project_tools
 
         registered = []
-        monkeypatch.setattr(project_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            project_tools.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
 
         project_tools.register_project_tools()
 
@@ -2349,7 +2713,9 @@ class TestSkillsBundle:
     def test_find_duplicates_and_scaffold_project(self, tmp_path, monkeypatch):
         import skills
 
-        monkeypatch.setattr(skills, "_path_validator", skills.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            skills, "_path_validator", skills.SecurePathValidator(allowed_roots=[str(tmp_path)])
+        )
         dupes = tmp_path / "dupes"
         dupes.mkdir()
         payload = "duplicate-content" * 100
@@ -2371,7 +2737,9 @@ class TestSkillsBundle:
 
         class Completed:
             returncode = 0
-            stdout = "a1|feat: add dashboard|Tyler|2026-06-04\nb2|fix: tighten parser|Tyler|2026-06-04"
+            stdout = (
+                "a1|feat: add dashboard|Tyler|2026-06-04\nb2|fix: tighten parser|Tyler|2026-06-04"
+            )
             stderr = ""
 
         monkeypatch.setattr(skills.subprocess, "run", lambda *args, **kwargs: Completed())
@@ -2386,10 +2754,13 @@ class TestSkillsBundle:
         class Client:
             def __init__(self, **kwargs):
                 pass
+
             def __enter__(self):
                 return self
+
             def __exit__(self, exc_type, exc, tb):
                 return False
+
             def get(self, url):
                 return Response()
 
@@ -2412,7 +2783,9 @@ class TestSkillsBundle:
         assert "timed out" in skills.generate_changelog()
 
         registered = []
-        monkeypatch.setattr(skills.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            skills.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
         skills.register_skill_tools()
 
         assert {"FindDuplicates", "Scaffold", "Changelog", "WebTest"}.issubset(set(registered))
@@ -2423,7 +2796,7 @@ class TestCodebaseIndexBundle:
         import codebase_index
 
         py_symbols, py_deps = codebase_index._extract_python(
-            "import os\nfrom .helper import run\n\nclass Demo:\n    def work(self, item: int = 1):\n        \"\"\"doc line\"\"\"\n        return item\n\nasync def ping(name):\n    return name\n"
+            'import os\nfrom .helper import run\n\nclass Demo:\n    def work(self, item: int = 1):\n        """doc line"""\n        return item\n\nasync def ping(name):\n    return name\n'
         )
         js_symbols, js_deps = codebase_index._extract_symbols(
             "import x from './lib'\nexport class Widget extends Base {}\nexport function boot(arg) {}\nconst run = (value) => value\n",
@@ -2450,7 +2823,7 @@ class TestCodebaseIndexBundle:
             encoding="utf-8",
         )
         (root / "helper.py").write_text(
-            "def helper():\n    \"\"\"help docs\"\"\"\n    return 'ok'\n",
+            'def helper():\n    """help docs"""\n    return \'ok\'\n',
             encoding="utf-8",
         )
 
@@ -2486,7 +2859,9 @@ class TestCodebaseIndexBundle:
                 "INSERT INTO embeddings (symbol_id, embed_text, vector_json) VALUES (?,?,?)",
                 (1, "helper def helper()", json.dumps([1.0, 0.0])),
             )
-        monkeypatch.setattr(codebase_index, "_get_embedding", lambda text: [1.0, 0.0] if "help" in text else [])
+        monkeypatch.setattr(
+            codebase_index, "_get_embedding", lambda text: [1.0, 0.0] if "help" in text else []
+        )
 
         vector_results = codebase_index._vector_search(db, "help", 5)
         db.close()
@@ -2499,12 +2874,21 @@ class TestCodebaseIndexBundle:
         embed_result = codebase_index.embed_project(str(root))
 
         registered = []
-        monkeypatch.setattr(codebase_index.registry, "register", lambda **kwargs: registered.append(kwargs["name"]))
+        monkeypatch.setattr(
+            codebase_index.registry, "register", lambda **kwargs: registered.append(kwargs["name"])
+        )
         codebase_index.register_index_tools()
 
         assert vector_results and vector_results[0][1] == "helper"
         assert "Embedding complete:" in embed_result
-        assert {"IndexProject", "SymbolLookup", "FindUsages", "DependencyGraph", "SemanticSearch", "EmbedProject"}.issubset(set(registered))
+        assert {
+            "IndexProject",
+            "SymbolLookup",
+            "FindUsages",
+            "DependencyGraph",
+            "SemanticSearch",
+            "EmbedProject",
+        }.issubset(set(registered))
 
 
 class TestCodeToolsDependencyAudit:
@@ -2531,7 +2915,11 @@ class TestSecureToolsExpanded:
     def test_secure_read_write_edit_and_async_paths(self, monkeypatch, tmp_path):
         import tools_secure
 
-        monkeypatch.setattr(tools_secure, "_path_validator", tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            tools_secure,
+            "_path_validator",
+            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
         file_path = tmp_path / "demo.txt"
 
         write_result = tools_secure.write_file(str(file_path), "alpha\nbeta")
@@ -2541,8 +2929,10 @@ class TestSecureToolsExpanded:
         class AsyncOpen:
             async def __aenter__(self):
                 return self
+
             async def __aexit__(self, exc_type, exc, tb):
                 return False
+
             async def read(self):
                 return "one\ntwo\nthree"
 
@@ -2557,7 +2947,11 @@ class TestSecureToolsExpanded:
     def test_secure_search_listing_and_bash_edge_cases(self, monkeypatch, tmp_path):
         import tools_secure
 
-        monkeypatch.setattr(tools_secure, "_path_validator", tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]))
+        monkeypatch.setattr(
+            tools_secure,
+            "_path_validator",
+            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
         root = tmp_path / "proj"
         root.mkdir()
         (root / "nested").mkdir()
@@ -2569,6 +2963,7 @@ class TestSecureToolsExpanded:
         listing = tools_secure.list_directory(str(root))
 
         captured = {}
+
         def fake_execute(command, cwd=None):
             captured["timeout"] = tools_secure._command_executor.max_execution_time
             return "x" * 10050
@@ -2576,7 +2971,11 @@ class TestSecureToolsExpanded:
         monkeypatch.setattr(tools_secure._command_executor, "execute_command", fake_execute)
         bash_result = tools_secure.run_bash("echo hello", timeout=7)
 
-        monkeypatch.setattr(tools_secure._command_executor, "execute_command", lambda command, cwd=None: (_ for _ in ()).throw(ValueError("blocked")))
+        monkeypatch.setattr(
+            tools_secure._command_executor,
+            "execute_command",
+            lambda command, cwd=None: (_ for _ in ()).throw(ValueError("blocked")),
+        )
         blocked = tools_secure.run_bash("echo nope")
 
         assert "No files matching" in no_glob
@@ -2604,8 +3003,10 @@ class TestWebBundleExpanded:
         class EmptyDDGS:
             def __enter__(self):
                 return self
+
             def __exit__(self, exc_type, exc, tb):
                 return False
+
             def text(self, query, max_results=5):
                 return iter(())
 
@@ -2615,6 +3016,7 @@ class TestWebBundleExpanded:
         class FailingDDGS:
             def __enter__(self):
                 raise RuntimeError("boom")
+
             def __exit__(self, exc_type, exc, tb):
                 return False
 
@@ -2634,16 +3036,22 @@ class TestDanGuiComponentsExpanded:
         class FakeTopLevel:
             def __init__(self, parent):
                 calls["parent"] = parent
+
             def title(self, value):
                 calls["title"] = value
+
             def geometry(self, value):
                 calls["geometry"] = value
+
             def configure(self, **kwargs):
                 calls["configure"] = kwargs
+
             def transient(self, parent):
                 calls["transient"] = parent
+
             def grab_set(self):
                 calls["grab"] = True
+
             def after(self, delay, callback):
                 calls["after"] = delay
 
@@ -2695,7 +3103,14 @@ class TestDanGuiComponentsExpanded:
         dots._active = True
         dots._step = 0
         configured = []
-        dots._dots = [type("Dot", (), {"configure": lambda self, **kwargs: configured.append(kwargs["text_color"])})() for _ in range(3)]
+        dots._dots = [
+            type(
+                "Dot",
+                (),
+                {"configure": lambda self, **kwargs: configured.append(kwargs["text_color"])},
+            )()
+            for _ in range(3)
+        ]
         dots.after = lambda delay, callback: configured.append(delay)
         dots._tick()
         dots.stop()
@@ -2712,6 +3127,7 @@ class TestDanGuiComponentsExpanded:
         class FakeWidget:
             def tag_configure(self, *args, **kwargs):
                 return None
+
             def insert(self, _end, text, tag):
                 inserted.append((text, tag))
 
@@ -2719,21 +3135,27 @@ class TestDanGuiComponentsExpanded:
             def __init__(self):
                 self._textbox = FakeWidget()
                 self.height = None
+
             def configure(self, **kwargs):
                 if "height" in kwargs:
                     self.height = kwargs["height"]
+
             def see(self, _value):
                 return None
+
             def grid(self, **kwargs):
                 return None
+
             def index(self, _value):
                 return "3.0"
+
             def get(self, start, end):
                 return "tool output"
 
         class FakeDots:
             def stop(self):
                 inserted.append(("stop", "dots"))
+
             def grid_remove(self):
                 inserted.append(("hide", "dots"))
 
@@ -2742,14 +3164,17 @@ class TestDanGuiComponentsExpanded:
         class FakeTopLevel:
             def clipboard_clear(self):
                 lifted.append("clear")
+
             def clipboard_append(self, value):
                 lifted.append(value)
 
         class FakeBubble:
             def __init__(self):
                 self.bound = []
+
             def winfo_toplevel(self):
                 return FakeTopLevel()
+
             def bind(self, event, callback):
                 self.bound.append(event)
 
@@ -2772,10 +3197,13 @@ class TestDanGuiComponentsExpanded:
             def __init__(self, parent, **kwargs):
                 self.command = kwargs["command"]
                 buttons.append(self)
+
             def place(self, **kwargs):
                 return None
+
             def lower(self):
                 return None
+
             def lift(self):
                 return None
 
@@ -2856,6 +3284,7 @@ class TestDanBootstrap:
         monkeypatch.setitem(sys.modules, "ml_tools", type("MlTools", (), {})())
 
         import tool_registry as registry
+
         monkeypatch.setattr(registry, "get_all_tools", lambda: [])
 
         Dan.init_tools()

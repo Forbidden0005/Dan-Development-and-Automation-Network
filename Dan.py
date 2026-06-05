@@ -14,7 +14,15 @@ from pathlib import Path
 # Ensure the dan directory is on the path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import APP_NAME, APP_VERSION, APP_TAGLINE, DEFAULT_PROVIDER, DEFAULT_MODEL, Colors, USER_DATA_DIR
+from config import (
+    APP_NAME,
+    APP_VERSION,
+    APP_TAGLINE,
+    DEFAULT_PROVIDER,
+    DEFAULT_MODEL,
+    Colors,
+    USER_DATA_DIR,
+)
 from providers import get_provider
 from agent import run_agent_loop, AgentInterrupted
 from tools import register_core_tools
@@ -53,6 +61,7 @@ def _save_checkpoint(user_input: str, messages: list[dict]) -> None:
     try:
         _CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
+
         _CHECKPOINT_FILE.write_text(
             _json.dumps({"user_input": user_input, "messages": messages}, indent=2),
             encoding="utf-8",
@@ -66,6 +75,7 @@ def _load_checkpoint() -> tuple[str, list[dict]] | None:
         if not _CHECKPOINT_FILE.exists():
             return None
         import json as _json
+
         data = _json.loads(_CHECKPOINT_FILE.read_text(encoding="utf-8"))
         return data["user_input"], data["messages"]
     except Exception:
@@ -82,12 +92,13 @@ def _clear_checkpoint() -> None:
 
 # ── Keyboard listener ─────────────────────────────────────────────────────────
 
+
 class EscapeListener:
     """Background thread that watches for Escape and sets interrupt_event."""
 
     def __init__(self):
         self.interrupt_event = threading.Event()
-        self._active         = threading.Event()
+        self._active = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -103,6 +114,7 @@ class EscapeListener:
     def _run(self) -> None:
         try:
             import msvcrt
+
             while True:
                 self._active.wait()
                 if msvcrt.kbhit():
@@ -190,10 +202,12 @@ def init_tools() -> int:
         logger.error("Failed to load ML tools: %s", e)
 
     from tool_registry import get_all_tools
+
     return len(get_all_tools())
 
 
 # ── Slash Commands ───────────────────────────────────────────────────────────
+
 
 def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> str | None:
     """Handle slash commands. Returns response text or None to continue."""
@@ -215,6 +229,7 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
 
     elif command == "/tools":
         from tool_registry import list_by_category
+
         cats = list_by_category()
         lines = []
         for cat, tools in sorted(cats.items()):
@@ -234,6 +249,7 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
 
     elif command == "/config":
         from api_config import show_config, set_value, get_value
+
         if not arg:
             return show_config()
         if "=" in arg:
@@ -246,6 +262,7 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
 
     elif command == "/provider":
         from api_config import load_config, save_config
+
         if not arg:
             current_provider = (
                 getattr(provider, "provider_name", "")
@@ -288,6 +305,7 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
 
     elif command == "/knowledge" or command == "/memory":
         from knowledge import list_all, search
+
         if arg:
             results = search(arg)
             if not results:
@@ -313,10 +331,12 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
             # Show current project or instructions
             if project_context.is_loaded():
                 return project_context.get()
-            return ("No project loaded.\n"
-                    "  /project .            — load current directory\n"
-                    "  /project <path>       — load a specific directory\n"
-                    "  /project clear        — unload current project")
+            return (
+                "No project loaded.\n"
+                "  /project .            — load current directory\n"
+                "  /project <path>       — load a specific directory\n"
+                "  /project clear        — unload current project"
+            )
         elif sub == "clear":
             name = project_context.name()
             project_context.clear()
@@ -324,10 +344,12 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
         else:
             # arg is a path
             from project_tools import _load_project
+
             return _load_project(arg.strip())
 
     elif command == "/compact":
         from context_mgr import compact, estimate_messages_tokens
+
         before = estimate_messages_tokens(messages)
         new_messages = compact(messages, provider)
         messages.clear()
@@ -342,15 +364,16 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
         return f"Logging: {'DEBUG' if level == logging.DEBUG else 'WARNING'}"
 
     elif command == "/keys":
-        if hasattr(provider, 'rotator'):
+        if hasattr(provider, "rotator"):
             return f"API Key Usage (last 60s):\n{provider.rotator.status()}"
         return "Key rotation not available for this provider."
 
     elif command == "/tokens":
         from context_mgr import estimate_messages_tokens
+
         tokens = estimate_messages_tokens(messages)
-        limit  = getattr(provider, 'context_limit', 200_000)
-        pct    = tokens / limit * 100
+        limit = getattr(provider, "context_limit", 200_000)
+        pct = tokens / limit * 100
         return f"Context: ~{tokens:,} / {limit:,} tokens ({pct:.1f}%)"
 
     elif command == "/cost":
@@ -368,10 +391,15 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
             return session_mgr.format_sessions_table()
 
         elif sub_cmd == "save":
-            pname    = getattr(provider, 'model', 'unknown')
-            prov_str = getattr(provider, '__class__', type(provider)).__name__.replace("Provider", "").lower()
-            return session_mgr.save(messages, prov_str, pname, name=sub_arg,
-                                    session_id=_get_session_id())
+            pname = getattr(provider, "model", "unknown")
+            prov_str = (
+                getattr(provider, "__class__", type(provider))
+                .__name__.replace("Provider", "")
+                .lower()
+            )
+            return session_mgr.save(
+                messages, prov_str, pname, name=sub_arg, session_id=_get_session_id()
+            )
 
         elif sub_cmd == "load":
             if not sub_arg:
@@ -382,9 +410,11 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
             loaded_msgs, meta = result
             messages.clear()
             messages.extend(loaded_msgs)
-            return (f"✓ Loaded session '{meta.get('name', sub_arg)}' "
-                    f"({len(loaded_msgs)} messages, "
-                    f"{meta.get('provider', '?')}/{meta.get('model', '?')})")
+            return (
+                f"✓ Loaded session '{meta.get('name', sub_arg)}' "
+                f"({len(loaded_msgs)} messages, "
+                f"{meta.get('provider', '?')}/{meta.get('model', '?')})"
+            )
 
         elif sub_cmd == "delete":
             if not sub_arg:
@@ -394,11 +424,13 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
             return f"Session not found: {sub_arg}"
 
         else:
-            return ("Session commands:\n"
-                    "  /session list           — show saved sessions\n"
-                    "  /session save [name]    — save current session\n"
-                    "  /session load <name>    — restore a saved session\n"
-                    "  /session delete <name>  — delete a saved session")
+            return (
+                "Session commands:\n"
+                "  /session list           — show saved sessions\n"
+                "  /session save [name]    — save current session\n"
+                "  /session load <name>    — restore a saved session\n"
+                "  /session delete <name>  — delete a saved session"
+            )
 
     else:
         # Check if it's an action
@@ -455,9 +487,11 @@ def _get_session_id() -> str:
 
 # ── Banner ───────────────────────────────────────────────────────────────────
 
-def print_banner(tool_count: int, provider_name: str, model: str,
-                 key_count: int, streaming: bool = False):
-    title  = f"  {APP_NAME} v{APP_VERSION} -- {APP_TAGLINE}  "
+
+def print_banner(
+    tool_count: int, provider_name: str, model: str, key_count: int, streaming: bool = False
+):
+    title = f"  {APP_NAME} v{APP_VERSION} -- {APP_TAGLINE}  "
     border = "+" + "=" * len(title) + "+"
     stream_label = "yes" if streaming else "no (provider unsupported)"
     print(f"""
@@ -507,24 +541,24 @@ class StreamWriter:
 
 # ── REPL ─────────────────────────────────────────────────────────────────────
 
+
 def repl(provider: object, model: str, provider_name: str):
     """Main Read-Eval-Print Loop."""
-    tool_count  = init_tools()
-    key_count   = getattr(provider, 'key_count', 1)
-    supports_stream = getattr(provider, 'supports_streaming', False)
+    tool_count = init_tools()
+    key_count = getattr(provider, "key_count", 1)
+    supports_stream = getattr(provider, "supports_streaming", False)
 
     # Initialise per-session cost tracker and session ID
     cost_tracker.init(model)
     sid = _get_session_id()
 
-    print_banner(tool_count, provider_name, model, key_count,
-                 streaming=supports_stream)
+    print_banner(tool_count, provider_name, model, key_count, streaming=supports_stream)
 
     messages: list[dict] = []
 
     stream_cb = StreamWriter() if supports_stream else None
-    progress  = ProgressDisplay()
-    esc       = EscapeListener()
+    progress = ProgressDisplay()
+    esc = EscapeListener()
 
     while True:
         try:
@@ -575,7 +609,9 @@ def repl(provider: object, model: str, provider_name: str):
         esc.arm()
         try:
             response, messages = run_agent_loop(
-                user_input, messages, provider,
+                user_input,
+                messages,
+                provider,
                 stream_callback=stream_cb,
                 on_progress=progress,
                 interrupt_event=esc.interrupt_event,
@@ -614,6 +650,7 @@ def repl(provider: object, model: str, provider_name: str):
 
 # ── One-shot Mode ────────────────────────────────────────────────────────────
 
+
 def one_shot(prompt: str, provider: object):
     """Run a single prompt and exit."""
     init_tools()
@@ -624,20 +661,33 @@ def one_shot(prompt: str, provider: object):
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(
         prog="dan",
         description=f"{APP_NAME} — {APP_TAGLINE}",
     )
     parser.add_argument("prompt", nargs="?", default=None, help="One-shot prompt")
-    parser.add_argument("--print", "-p", dest="print_mode", action="store_true",
-                        help="Print mode (one-shot, no REPL)")
+    parser.add_argument(
+        "--print",
+        "-p",
+        dest="print_mode",
+        action="store_true",
+        help="Print mode (one-shot, no REPL)",
+    )
     parser.add_argument("--provider", default=None, help="LLM provider (anthropic/openai/ollama)")
     parser.add_argument("--model", default=None, help="Model name")
-    parser.add_argument("--doctor", action="store_true",
-                        help="Run startup diagnostics for the selected target and exit")
-    parser.add_argument("--target", default="cli", choices=("cli", "gui"),
-                        help="Startup target to validate with --doctor")
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Run startup diagnostics for the selected target and exit",
+    )
+    parser.add_argument(
+        "--target",
+        default="cli",
+        choices=("cli", "gui"),
+        help="Startup target to validate with --doctor",
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
 
     args = parser.parse_args()
@@ -647,7 +697,9 @@ def main():
         logger.setLevel(logging.DEBUG)
 
     # Determine provider
-    provider_name = getattr(args, "provider", None) or os.environ.get("DAN_PROVIDER", DEFAULT_PROVIDER)
+    provider_name = getattr(args, "provider", None) or os.environ.get(
+        "DAN_PROVIDER", DEFAULT_PROVIDER
+    )
     model = getattr(args, "model", None) or os.environ.get("DAN_MODEL", DEFAULT_MODEL)
 
     doctor_mode = getattr(args, "doctor", False)
@@ -666,7 +718,7 @@ def main():
         print(startup_doctor(".", provider=provider_name, target="cli"))
         sys.exit(1)
 
-    actual_model = getattr(provider, 'model', model)
+    actual_model = getattr(provider, "model", model)
 
     prompt = getattr(args, "prompt", None)
     print_mode = getattr(args, "print_mode", False)

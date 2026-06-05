@@ -10,47 +10,133 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 SKIP_DIRS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv", "env",
-    "dist", "build", ".next", ".nuxt", "target", ".cargo",
-    ".mypy_cache", ".pytest_cache", ".tox", "coverage", "htmlcov",
-    "obj", "bin", ".vs", ".idea", ".vscode", ".eggs",
-    "site-packages", ".terraform", ".serverless", ".expo",
-    ".gradle", ".m2", "vendor",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "env",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    "target",
+    ".cargo",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".tox",
+    "coverage",
+    "htmlcov",
+    "obj",
+    "bin",
+    ".vs",
+    ".idea",
+    ".vscode",
+    ".eggs",
+    "site-packages",
+    ".terraform",
+    ".serverless",
+    ".expo",
+    ".gradle",
+    ".m2",
+    "vendor",
 }
 
 SKIP_EXTS = {
-    ".pyc", ".pyo", ".pyd", ".so", ".dll", ".exe", ".bin",
-    ".jpg", ".jpeg", ".png", ".gif", ".ico", ".svg", ".bmp", ".webp",
-    ".mp3", ".mp4", ".wav", ".avi", ".mov",
-    ".pdf", ".zip", ".tar", ".gz", ".rar", ".7z",
-    ".woff", ".woff2", ".ttf", ".eot",
+    ".pyc",
+    ".pyo",
+    ".pyd",
+    ".so",
+    ".dll",
+    ".exe",
+    ".bin",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".ico",
+    ".svg",
+    ".bmp",
+    ".webp",
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".avi",
+    ".mov",
+    ".pdf",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".rar",
+    ".7z",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
 }
 
 ENTRY_NAMES = {
-    "main.py", "app.py", "server.py", "run.py", "manage.py",
-    "index.js", "index.ts", "app.js", "app.ts", "server.js", "server.ts",
-    "main.go", "main.rs", "main.cpp", "main.c",
-    "Program.cs", "Main.java",
+    "main.py",
+    "app.py",
+    "server.py",
+    "run.py",
+    "manage.py",
+    "index.js",
+    "index.ts",
+    "app.js",
+    "app.ts",
+    "server.js",
+    "server.ts",
+    "main.go",
+    "main.rs",
+    "main.cpp",
+    "main.c",
+    "Program.cs",
+    "Main.java",
 }
 
 LANG_MAP = {
-    ".py": "Python", ".pyw": "Python",
-    ".js": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
-    ".ts": "TypeScript", ".mts": "TypeScript",
-    ".jsx": "React", ".tsx": "React/TS",
-    ".rs": "Rust", ".go": "Go",
-    ".java": "Java", ".kt": "Kotlin",
-    ".cs": "C#", ".vb": "VB.NET",
-    ".cpp": "C++", ".cc": "C++", ".cxx": "C++",
-    ".c": "C", ".h": "C/C++", ".hpp": "C++",
-    ".rb": "Ruby", ".php": "PHP", ".swift": "Swift",
-    ".vue": "Vue", ".svelte": "Svelte",
-    ".html": "HTML", ".css": "CSS", ".scss": "SCSS",
-    ".json": "JSON", ".yaml": "YAML", ".yml": "YAML", ".toml": "TOML",
-    ".sh": "Shell", ".bash": "Shell",
-    ".bat": "Batch", ".ps1": "PowerShell",
-    ".sql": "SQL", ".graphql": "GraphQL",
-    ".tf": "Terraform", ".md": "Markdown",
+    ".py": "Python",
+    ".pyw": "Python",
+    ".js": "JavaScript",
+    ".mjs": "JavaScript",
+    ".cjs": "JavaScript",
+    ".ts": "TypeScript",
+    ".mts": "TypeScript",
+    ".jsx": "React",
+    ".tsx": "React/TS",
+    ".rs": "Rust",
+    ".go": "Go",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".cs": "C#",
+    ".vb": "VB.NET",
+    ".cpp": "C++",
+    ".cc": "C++",
+    ".cxx": "C++",
+    ".c": "C",
+    ".h": "C/C++",
+    ".hpp": "C++",
+    ".rb": "Ruby",
+    ".php": "PHP",
+    ".swift": "Swift",
+    ".vue": "Vue",
+    ".svelte": "Svelte",
+    ".html": "HTML",
+    ".css": "CSS",
+    ".scss": "SCSS",
+    ".json": "JSON",
+    ".yaml": "YAML",
+    ".yml": "YAML",
+    ".toml": "TOML",
+    ".sh": "Shell",
+    ".bash": "Shell",
+    ".bat": "Batch",
+    ".ps1": "PowerShell",
+    ".sql": "SQL",
+    ".graphql": "GraphQL",
+    ".tf": "Terraform",
+    ".md": "Markdown",
 }
 
 MAX_FILE_SIZE = 500_000
@@ -97,8 +183,8 @@ class ProjectMap:
 
     def summary(self) -> str:
         lang_str = ", ".join(
-            f"{count} {language}" for language, count in
-            sorted(self.languages.items(), key=lambda item: -item[1])[:5]
+            f"{count} {language}"
+            for language, count in sorted(self.languages.items(), key=lambda item: -item[1])[:5]
         )
         return (
             f"Loaded: {self.display_name}  "
@@ -108,8 +194,8 @@ class ProjectMap:
 
     def to_prompt(self) -> str:
         lang_str = " | ".join(
-            f"{count} {language}" for language, count in
-            sorted(self.languages.items(), key=lambda item: -item[1])[:6]
+            f"{count} {language}"
+            for language, count in sorted(self.languages.items(), key=lambda item: -item[1])[:6]
         )
         lines = [
             "<project_context>",
@@ -247,7 +333,8 @@ def _should_skip_file(file_path: Path) -> bool:
 def _iter_files(root: Path):
     for current_root, dirnames, filenames in os.walk(root, topdown=True):
         dirnames[:] = [
-            dirname for dirname in dirnames
+            dirname
+            for dirname in dirnames
             if dirname not in SKIP_DIRS and not dirname.startswith(".")
         ]
         current_dir = Path(current_root)

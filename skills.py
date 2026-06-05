@@ -18,6 +18,7 @@ _path_validator = SecurePathValidator()
 
 # ── Find Duplicates (from file-organizer skill) ─────────────────────────────
 
+
 def find_duplicates(path: str = ".", min_size: int = 1024) -> str:
     """Find duplicate files by content hash."""
     try:
@@ -52,7 +53,9 @@ def find_duplicates(path: str = ".", min_size: int = 1024) -> str:
     if not dupes:
         return f"No duplicates found ({files_scanned} files scanned)."
 
-    lines = [f"Found {sum(len(p) - 1 for p in dupes.values())} duplicate files in {len(dupes)} groups:"]
+    lines = [
+        f"Found {sum(len(p) - 1 for p in dupes.values())} duplicate files in {len(dupes)} groups:"
+    ]
     for h, paths in list(dupes.items())[:50]:
         size = Path(root / paths[0]).stat().st_size
         size_str = f"{size:,}b" if size < 1024 else f"{size // 1024:,}KB"
@@ -141,6 +144,7 @@ def scaffold_project(name: str, template: str = "python", path: str = ".") -> st
 
 # ── Changelog Generator (from changelog-generator skill) ────────────────────
 
+
 def generate_changelog(since: str = "", until: str = "", format: str = "markdown") -> str:
     """Generate a changelog from git history."""
     try:
@@ -162,33 +166,70 @@ def generate_changelog(since: str = "", until: str = "", format: str = "markdown
 
         # Parse and categorize commits
         categories: dict[str, list[str]] = {
-            "feat": [], "fix": [], "docs": [], "refactor": [],
-            "test": [], "chore": [], "perf": [], "style": [],
-            "breaking": [], "other": [],
+            "feat": [],
+            "fix": [],
+            "docs": [],
+            "refactor": [],
+            "test": [],
+            "chore": [],
+            "perf": [],
+            "style": [],
+            "breaking": [],
+            "other": [],
         }
 
         CATEGORY_MAP = {
-            "feat": "feat", "feature": "feat", "add": "feat",
-            "fix": "fix", "bug": "fix", "patch": "fix", "hotfix": "fix",
-            "doc": "docs", "docs": "docs", "readme": "docs",
-            "refactor": "refactor", "refact": "refactor",
-            "test": "test", "tests": "test",
-            "chore": "chore", "build": "chore", "ci": "chore", "deps": "chore",
-            "perf": "perf", "performance": "perf", "optimize": "perf",
-            "style": "style", "format": "style", "lint": "style",
-            "breaking": "breaking", "break": "breaking",
+            "feat": "feat",
+            "feature": "feat",
+            "add": "feat",
+            "fix": "fix",
+            "bug": "fix",
+            "patch": "fix",
+            "hotfix": "fix",
+            "doc": "docs",
+            "docs": "docs",
+            "readme": "docs",
+            "refactor": "refactor",
+            "refact": "refactor",
+            "test": "test",
+            "tests": "test",
+            "chore": "chore",
+            "build": "chore",
+            "ci": "chore",
+            "deps": "chore",
+            "perf": "perf",
+            "performance": "perf",
+            "optimize": "perf",
+            "style": "style",
+            "format": "style",
+            "lint": "style",
+            "breaking": "breaking",
+            "break": "breaking",
         }
 
         EMOJI_MAP = {
-            "feat": "✨", "fix": "🐛", "docs": "📝", "refactor": "♻️",
-            "test": "🧪", "chore": "🔧", "perf": "⚡", "style": "🎨",
-            "breaking": "💥", "other": "📦",
+            "feat": "✨",
+            "fix": "🐛",
+            "docs": "📝",
+            "refactor": "♻️",
+            "test": "🧪",
+            "chore": "🔧",
+            "perf": "⚡",
+            "style": "🎨",
+            "breaking": "💥",
+            "other": "📦",
         }
 
         LABEL_MAP = {
-            "feat": "New Features", "fix": "Bug Fixes", "docs": "Documentation",
-            "refactor": "Refactoring", "test": "Tests", "chore": "Maintenance",
-            "perf": "Performance", "style": "Styling", "breaking": "Breaking Changes",
+            "feat": "New Features",
+            "fix": "Bug Fixes",
+            "docs": "Documentation",
+            "refactor": "Refactoring",
+            "test": "Tests",
+            "chore": "Maintenance",
+            "perf": "Performance",
+            "style": "Styling",
+            "breaking": "Breaking Changes",
             "other": "Other",
         }
 
@@ -202,9 +243,11 @@ def generate_changelog(since: str = "", until: str = "", format: str = "markdown
             matched = False
             subject_lower = subject.lower()
             for keyword, cat in CATEGORY_MAP.items():
-                if subject_lower.startswith(keyword + ":") or subject_lower.startswith(keyword + "("):
+                if subject_lower.startswith(keyword + ":") or subject_lower.startswith(
+                    keyword + "("
+                ):
                     # Strip the prefix
-                    clean = re.sub(r'^[\w]+(\([^)]*\))?:\s*', '', subject)
+                    clean = re.sub(r"^[\w]+(\([^)]*\))?:\s*", "", subject)
                     categories[cat].append(f"{clean} ({author}, {date})")
                     matched = True
                     break
@@ -246,6 +289,7 @@ def generate_changelog(since: str = "", until: str = "", format: str = "markdown
 
 # ── Web App Test Runner (from webapp-testing skill) ──────────────────────────
 
+
 def run_webapp_test(url: str, script: str = "", checks: str = "") -> str:
     """Test a web application URL for basic health and optional Playwright checks."""
     try:
@@ -272,7 +316,10 @@ def run_webapp_test(url: str, script: str = "", checks: str = "") -> str:
                 html = r.text
                 if "<title>" in html.lower():
                     import re as _re
-                    title = _re.search(r'<title[^>]*>(.*?)</title>', html, _re.IGNORECASE | _re.DOTALL)
+
+                    title = _re.search(
+                        r"<title[^>]*>(.*?)</title>", html, _re.IGNORECASE | _re.DOTALL
+                    )
                     if title:
                         results.append(f"✓ Title: {title.group(1).strip()}")
                 if "error" in html.lower()[:2000] or "exception" in html.lower()[:2000]:
@@ -288,6 +335,7 @@ def run_webapp_test(url: str, script: str = "", checks: str = "") -> str:
 
 # ── Registration ─────────────────────────────────────────────────────────────
 
+
 def register_skill_tools() -> None:
     """Register skill-derived tools."""
 
@@ -298,10 +346,15 @@ def register_skill_tools() -> None:
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Directory to scan", "default": "."},
-                "min_size": {"type": "integer", "description": "Min file size in bytes", "default": 1024},
+                "min_size": {
+                    "type": "integer",
+                    "description": "Min file size in bytes",
+                    "default": 1024,
+                },
             },
         },
-        handler=find_duplicates, category="skills",
+        handler=find_duplicates,
+        category="skills",
     )
 
     registry.register(
@@ -311,12 +364,17 @@ def register_skill_tools() -> None:
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Project name"},
-                "template": {"type": "string", "enum": ["python", "node", "web"], "default": "python"},
+                "template": {
+                    "type": "string",
+                    "enum": ["python", "node", "web"],
+                    "default": "python",
+                },
                 "path": {"type": "string", "description": "Parent directory", "default": "."},
             },
             "required": ["name"],
         },
-        handler=scaffold_project, category="skills",
+        handler=scaffold_project,
+        category="skills",
     )
 
     registry.register(
@@ -325,12 +383,17 @@ def register_skill_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "since": {"type": "string", "description": "Start date/tag (e.g. '2024-01-01' or 'v1.0')", "default": ""},
+                "since": {
+                    "type": "string",
+                    "description": "Start date/tag (e.g. '2024-01-01' or 'v1.0')",
+                    "default": "",
+                },
                 "until": {"type": "string", "description": "End date/tag", "default": ""},
                 "format": {"type": "string", "enum": ["markdown", "plain"], "default": "markdown"},
             },
         },
-        handler=generate_changelog, category="skills",
+        handler=generate_changelog,
+        category="skills",
     )
 
     registry.register(
@@ -343,5 +406,6 @@ def register_skill_tools() -> None:
             },
             "required": ["url"],
         },
-        handler=run_webapp_test, category="skills",
+        handler=run_webapp_test,
+        category="skills",
     )

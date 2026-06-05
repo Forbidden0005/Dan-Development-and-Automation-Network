@@ -16,12 +16,18 @@ class AnthropicProvider:
         self.rotator = KeyRotator("ANTHROPIC_API_KEY")
         try:
             import anthropic
+
             self._anthropic = anthropic
         except ImportError:
             raise ImportError("pip install anthropic")
 
-    def chat(self, messages: list[Message], system: str = "",
-             tools: list[dict] | None = None, max_tokens: int = 8192) -> Response:
+    def chat(
+        self,
+        messages: list[Message],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+    ) -> Response:
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -59,14 +65,17 @@ class AnthropicProvider:
             if block.type == "text":
                 resp.text += block.text
             elif block.type == "tool_use":
-                resp.tool_calls.append(ToolCall(
-                    id=block.id, name=block.name, input=block.input
-                ))
+                resp.tool_calls.append(ToolCall(id=block.id, name=block.name, input=block.input))
         return resp
 
-    def chat_stream(self, messages: list[Message], system: str = "",
-                    tools: list[dict] | None = None, max_tokens: int = 8192,
-                    on_text: Callable[[str], None] | None = None) -> Response:
+    def chat_stream(
+        self,
+        messages: list[Message],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+        on_text: Callable[[str], None] | None = None,
+    ) -> Response:
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -101,9 +110,9 @@ class AnthropicProvider:
 
             for block in final.content:
                 if block.type == "tool_use":
-                    resp.tool_calls.append(ToolCall(
-                        id=block.id, name=block.name, input=block.input
-                    ))
+                    resp.tool_calls.append(
+                        ToolCall(id=block.id, name=block.name, input=block.input)
+                    )
 
         except self._anthropic.RateLimitError:
             logger.warning("Key %d rate-limited during stream, retrying...", key_idx + 1)

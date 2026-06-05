@@ -10,12 +10,18 @@ class OpenAIProvider:
         self.rotator = KeyRotator("OPENAI_API_KEY")
         try:
             import openai
+
             self._openai = openai
         except ImportError:
             raise ImportError("pip install openai")
 
-    def chat(self, messages: list[Message], system: str = "",
-             tools: list[dict] | None = None, max_tokens: int = 8192) -> Response:
+    def chat(
+        self,
+        messages: list[Message],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+    ) -> Response:
         est = sum(len(str(m.content)) for m in messages) // 4
         api_key, key_idx = self.rotator.next(estimated_tokens=est)
         client = self._openai.OpenAI(api_key=api_key)
@@ -34,14 +40,16 @@ class OpenAIProvider:
         if tools:
             oai_tools = []
             for t in tools:
-                oai_tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": t["name"],
-                        "description": t.get("description", ""),
-                        "parameters": t.get("input_schema", {}),
+                oai_tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t.get("description", ""),
+                            "parameters": t.get("input_schema", {}),
+                        },
                     }
-                })
+                )
             kwargs["tools"] = oai_tools
 
         result = client.chat.completions.create(**kwargs)
@@ -62,11 +70,13 @@ class OpenAIProvider:
 
         if choice.message.tool_calls:
             for tc in choice.message.tool_calls:
-                resp.tool_calls.append(ToolCall(
-                    id=tc.id,
-                    name=tc.function.name,
-                    input=parse_tool_arguments(tc.function.arguments),
-                ))
+                resp.tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        input=parse_tool_arguments(tc.function.arguments),
+                    )
+                )
         return resp
 
     @property

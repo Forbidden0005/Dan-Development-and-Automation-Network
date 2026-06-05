@@ -142,7 +142,9 @@ def show_config() -> str:
         if secret_key in SECRET_KEY_ENV_MAP:
             secret_value = get_secret(secret_key)
             source = "environment" if secret_value else "not set"
-            lines.append(f"    api_key: {_mask('api_key', secret_value) if secret_value else '(not set)'}")
+            lines.append(
+                f"    api_key: {_mask('api_key', secret_value) if secret_value else '(not set)'}"
+            )
             lines.append(f"    api_key_source: {source}")
         lines.append("")
 

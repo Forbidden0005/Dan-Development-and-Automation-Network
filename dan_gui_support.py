@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 import json
 
-
 DEFAULT_PROMPT_TEMPLATE = (
     "You are an expert in [TOPIC].\n\n"
     "Your role is to:\n- [Task 1]\n- [Task 2]\n\n"

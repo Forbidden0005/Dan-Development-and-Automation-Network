@@ -28,8 +28,10 @@ def _safe_session_stem(name: str) -> str:
 
 # ── Save ──────────────────────────────────────────────────────────────────────
 
-def save(messages: list[dict], provider: str, model: str,
-         name: str = "", session_id: str = "") -> str:
+
+def save(
+    messages: list[dict], provider: str, model: str, name: str = "", session_id: str = ""
+) -> str:
     """Save the current conversation to disk.
 
     If *name* is given, saves to sessions/<name>.json (overwrites existing).
@@ -37,8 +39,8 @@ def save(messages: list[dict], provider: str, model: str,
 
     Returns a human-readable confirmation string.
     """
-    d     = _dir()
-    sid   = session_id or str(uuid.uuid4())[:8]
+    d = _dir()
+    sid = session_id or str(uuid.uuid4())[:8]
     fname = (name.strip() or sid).replace(" ", "_")
 
     # Guard against dangerous filenames
@@ -49,12 +51,12 @@ def save(messages: list[dict], provider: str, model: str,
     filepath = d / f"{fname}.json"
     data = {
         "session_id": sid,
-        "name":       fname,
-        "created":    time.time(),
-        "updated":    time.time(),
-        "provider":   provider,
-        "model":      model,
-        "messages":   messages,
+        "name": fname,
+        "created": time.time(),
+        "updated": time.time(),
+        "provider": provider,
+        "model": model,
+        "messages": messages,
     }
     filepath.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return f"✓ Session saved → {filepath.name} ({len(messages)} messages)"
@@ -62,22 +64,22 @@ def save(messages: list[dict], provider: str, model: str,
 
 # ── Auto-save ─────────────────────────────────────────────────────────────────
 
-def auto_save(messages: list[dict], provider: str, model: str,
-              session_id: str) -> None:
+
+def auto_save(messages: list[dict], provider: str, model: str, session_id: str) -> None:
     """Silently auto-save the session after each turn (best-effort)."""
     if not messages:
         return
     try:
-        d        = _dir()
+        d = _dir()
         filepath = d / f"_auto_{session_id}.json"
         data = {
             "session_id": session_id,
-            "name":       f"_auto_{session_id}",
-            "created":    time.time(),
-            "updated":    time.time(),
-            "provider":   provider,
-            "model":      model,
-            "messages":   messages,
+            "name": f"_auto_{session_id}",
+            "created": time.time(),
+            "updated": time.time(),
+            "provider": provider,
+            "model": model,
+            "messages": messages,
         }
         filepath.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception:
@@ -85,6 +87,7 @@ def auto_save(messages: list[dict], provider: str, model: str,
 
 
 # ── Load ──────────────────────────────────────────────────────────────────────
+
 
 def load(name: str) -> tuple[list[dict], dict] | None:
     """Load a session by name or session_id.
@@ -144,6 +147,7 @@ def delete(name: str) -> bool:
 
 # ── List ──────────────────────────────────────────────────────────────────────
 
+
 def list_sessions(include_auto: bool = False) -> list[dict]:
     """Return session metadata sorted by most-recently updated first.
 
@@ -156,14 +160,16 @@ def list_sessions(include_auto: bool = False) -> list[dict]:
             continue
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
-            sessions.append({
-                "name":          data.get("name", fp.stem),
-                "updated":       data.get("updated", 0),
-                "message_count": len(data.get("messages", [])),
-                "provider":      data.get("provider", "?"),
-                "model":         data.get("model", "?"),
-                "filename":      fp.name,
-            })
+            sessions.append(
+                {
+                    "name": data.get("name", fp.stem),
+                    "updated": data.get("updated", 0),
+                    "message_count": len(data.get("messages", [])),
+                    "provider": data.get("provider", "?"),
+                    "model": data.get("model", "?"),
+                    "filename": fp.name,
+                }
+            )
         except Exception:
             continue
     return sorted(sessions, key=lambda x: x["updated"], reverse=True)
@@ -178,7 +184,7 @@ def format_sessions_table() -> str:
     lines = [f"{'NAME':<30} {'MSGS':>4}  {'UPDATED':<20}  {'PROVIDER/MODEL'}"]
     lines.append("-" * 75)
     for s in sessions:
-        ts    = time.strftime("%Y-%m-%d %H:%M", time.localtime(s["updated"]))
+        ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(s["updated"]))
         model = f"{s['provider']}/{s['model']}"[:28]
         lines.append(f"{s['name']:<30} {s['message_count']:>4}  {ts:<20}  {model}")
     return "\n".join(lines)

@@ -13,15 +13,17 @@ logger = logging.getLogger(__name__)
 
 # ── Core helper ───────────────────────────────────────────────────────────────
 
-def _git(args: list[str], cwd: str | None = None,
-         timeout: int = 30) -> tuple[int, str, str]:
+
+def _git(args: list[str], cwd: str | None = None, timeout: int = 30) -> tuple[int, str, str]:
     """Run a git command. Returns (returncode, stdout, stderr)."""
     try:
         result = subprocess.run(
             ["git"] + args,
             cwd=cwd or os.getcwd(),
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
         return result.returncode, result.stdout, result.stderr
@@ -40,6 +42,7 @@ def _is_git_repo() -> bool:
 
 # ── Tool handlers ─────────────────────────────────────────────────────────────
 
+
 def git_status(short: bool = False) -> str:
     """Show the working tree status."""
     if not _is_git_repo():
@@ -49,17 +52,17 @@ def git_status(short: bool = False) -> str:
     code, branch_out, _ = _git(["branch", "--show-current"])
     branch = branch_out.strip() or "(detached HEAD)"
 
-    code, ahead_out, _ = _git([
-        "rev-list", "--left-right", "--count", "HEAD...@{upstream}"
-    ])
+    code, ahead_out, _ = _git(["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
     tracking = ""
     if code == 0 and ahead_out.strip():
         parts = ahead_out.strip().split()
         if len(parts) == 2:
             ahead, behind = parts
             notes = []
-            if int(ahead) > 0:  notes.append(f"{ahead} ahead")
-            if int(behind) > 0: notes.append(f"{behind} behind")
+            if int(ahead) > 0:
+                notes.append(f"{ahead} ahead")
+            if int(behind) > 0:
+                notes.append(f"{behind} behind")
             if notes:
                 tracking = f" ({', '.join(notes)})"
 
@@ -142,8 +145,10 @@ def git_log(count: int = 10, oneline: bool = True, path: str = "") -> str:
     count = max(1, min(count, 100))
     args = ["log", f"-{count}"]
     if oneline:
-        args += ["--pretty=format:%C(yellow)%h%Creset %C(cyan)%ad%Creset %s %C(dim)(%an)%Creset",
-                 "--date=short"]
+        args += [
+            "--pretty=format:%C(yellow)%h%Creset %C(cyan)%ad%Creset %s %C(dim)(%an)%Creset",
+            "--date=short",
+        ]
     else:
         args += ["--pretty=format:%H%n%ad%n%an <%ae>%n%B%n---", "--date=iso"]
     if path:
@@ -206,8 +211,7 @@ def git_add(paths: str = ".") -> str:
     return "\n".join(results)
 
 
-def git_branch(name: str = "", checkout: bool = False,
-               create: bool = False) -> str:
+def git_branch(name: str = "", checkout: bool = False, create: bool = False) -> str:
     """List branches, or create/switch to a branch."""
     if not _is_git_repo():
         return "Error: Not inside a git repository."
@@ -236,7 +240,10 @@ def git_branch(name: str = "", checkout: bool = False,
     output = (out + err).strip()
     if code != 0:
         return f"git branch error: {output}"
-    return output or f"✓ Branch '{name}' {'created and checked out' if create else ('checked out' if checkout else 'created')}."
+    return (
+        output
+        or f"✓ Branch '{name}' {'created and checked out' if create else ('checked out' if checkout else 'created')}."
+    )
 
 
 def git_stash(action: str = "list", message: str = "") -> str:
@@ -266,6 +273,7 @@ def git_stash(action: str = "list", message: str = "") -> str:
 
 # ── Registration ──────────────────────────────────────────────────────────────
 
+
 def register_git_tools() -> None:
     """Register all git tools."""
 
@@ -285,7 +293,8 @@ def register_git_tools() -> None:
                 },
             },
         },
-        handler=git_status, category="git",
+        handler=git_status,
+        category="git",
     )
 
     registry.register(
@@ -314,7 +323,8 @@ def register_git_tools() -> None:
                 },
             },
         },
-        handler=git_diff, category="git",
+        handler=git_diff,
+        category="git",
     )
 
     registry.register(
@@ -340,7 +350,8 @@ def register_git_tools() -> None:
                 },
             },
         },
-        handler=git_log, category="git",
+        handler=git_log,
+        category="git",
     )
 
     registry.register(
@@ -359,7 +370,8 @@ def register_git_tools() -> None:
                 },
             },
         },
-        handler=git_add, category="git",
+        handler=git_add,
+        category="git",
     )
 
     registry.register(
@@ -380,7 +392,8 @@ def register_git_tools() -> None:
             },
             "required": ["message"],
         },
-        handler=git_commit, category="git",
+        handler=git_commit,
+        category="git",
     )
 
     registry.register(
@@ -409,7 +422,8 @@ def register_git_tools() -> None:
                 },
             },
         },
-        handler=git_branch, category="git",
+        handler=git_branch,
+        category="git",
     )
 
     registry.register(
@@ -431,5 +445,6 @@ def register_git_tools() -> None:
                 },
             },
         },
-        handler=git_stash, category="git",
+        handler=git_stash,
+        category="git",
     )

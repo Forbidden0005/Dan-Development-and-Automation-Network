@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class _TextExtractor(HTMLParser):
     """Simple HTML to text converter."""
+
     def __init__(self):
         super().__init__()
         self._text: list[str] = []
@@ -90,8 +91,8 @@ def web_search(query: str, num_results: int = 5) -> str:
         results = []
         with DDGS() as ddgs:
             for i, r in enumerate(ddgs.text(query, max_results=num_results)):
-                title   = r.get("title", "").strip()
-                url     = r.get("href", "").strip()
+                title = r.get("title", "").strip()
+                url = r.get("href", "").strip()
                 snippet = r.get("body", "").strip()
                 results.append(f"{i+1}. {title}\n   {url}\n   {snippet}")
 
@@ -105,28 +106,44 @@ def web_search(query: str, num_results: int = 5) -> str:
 def register_web_tools() -> None:
     """Register web tools."""
     registry.register(
-        name="WebFetch", description="Fetch a web page and extract text content.",
+        name="WebFetch",
+        description="Fetch a web page and extract text content.",
         parameters={
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "URL to fetch"},
-                "max_chars": {"type": "integer", "description": "Max chars to return", "default": 15000},
-                "allow_local": {"type": "boolean", "description": "Allow loopback/private-network URLs", "default": False},
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Max chars to return",
+                    "default": 15000,
+                },
+                "allow_local": {
+                    "type": "boolean",
+                    "description": "Allow loopback/private-network URLs",
+                    "default": False,
+                },
             },
             "required": ["url"],
         },
-        handler=web_fetch, category="web",
+        handler=web_fetch,
+        category="web",
     )
 
     registry.register(
-        name="WebSearch", description="Search the web and return results.",
+        name="WebSearch",
+        description="Search the web and return results.",
         parameters={
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "num_results": {"type": "integer", "description": "Number of results", "default": 5},
+                "num_results": {
+                    "type": "integer",
+                    "description": "Number of results",
+                    "default": 5,
+                },
             },
             "required": ["query"],
         },
-        handler=web_search, category="web",
+        handler=web_search,
+        category="web",
     )

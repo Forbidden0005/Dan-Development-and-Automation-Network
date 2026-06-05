@@ -11,11 +11,11 @@ from pathlib import Path
 
 import tool_registry as registry
 from security_utils import (
-    SecurePathValidator, 
-    SecureCommandExecutor, 
+    SecurePathValidator,
+    SecureCommandExecutor,
     sanitize_user_input,
     validate_fetch_url,
-    validate_file_size
+    validate_file_size,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ _path_validator = SecurePathValidator()
 _command_executor = SecureCommandExecutor(use_whitelist=True, max_execution_time=30)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _safe_path(path: str) -> Path:
     """Securely resolve and validate a file path."""
@@ -62,44 +63,45 @@ def _backup(path: Path) -> str | None:
 
 # ── Tool Handlers ────────────────────────────────────────────────────────────
 
+
 def read_file(path: str, offset: int = 0, limit: int = 0) -> str:
     """Read a file's contents with security validation."""
     try:
         # Sanitize inputs
         path = sanitize_user_input(path, max_length=500)
-        
+
         p = _safe_path(path)
         if not p.exists():
             return f"Error: File not found: {path}"
         if not p.is_file():
             return f"Error: Not a file: {path}"
-        
+
         # Validate file size before reading
         validate_file_size(p, max_size_mb=50)
-        
+
         try:
             content = p.read_text(encoding="utf-8", errors="replace")
             lines = content.splitlines()
-            
+
             if offset or limit:
                 end = offset + limit if limit else len(lines)
                 lines = lines[offset:end]
-            
+
             # Limit output size to prevent memory exhaustion
             output_lines = []
             for i, line in enumerate(lines[:10000]):  # Max 10k lines
                 output_lines.append(f"{i+offset+1:4d} | {line}")
-            
+
             result = "\n".join(output_lines)
             if len(lines) > 10000:
                 result += f"\n... (truncated, {len(lines)} total lines)"
-            
+
             return result
-            
+
         except Exception as e:
             logger.error("Error reading file %s: %s", path, e)
             return f"Error reading {path}: {e}"
-            
+
     except ValueError as e:
         return f"Security error: {e}"
 
@@ -110,7 +112,7 @@ def write_file(path: str, content: str, create_dirs: bool = True) -> str:
         # Sanitize inputs
         path = sanitize_user_input(path, max_length=500)
         content = sanitize_user_input(content, max_length=1000000)  # 1MB limit
-        
+
         p = _safe_path(path)
         if create_dirs:
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +134,7 @@ def write_file(path: str, content: str, create_dirs: bool = True) -> str:
         if diff:
             return f"✓ Wrote {len(content)} bytes to {path}{bak_note}\n\n{diff}"
         return f"✓ Wrote {len(content)} bytes to {path} (no changes){bak_note}"
-        
+
     except ValueError as e:
         return f"Security error: {e}"
     except Exception as e:
@@ -147,11 +149,11 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
         path = sanitize_user_input(path, max_length=500)
         old_text = sanitize_user_input(old_text, max_length=100000)
         new_text = sanitize_user_input(new_text, max_length=100000)
-        
+
         p = _safe_path(path)
         if not p.exists():
             return f"Error: File not found: {path}"
-        
+
         # Validate file size before reading
         validate_file_size(p, max_size_mb=50)
 
@@ -174,10 +176,10 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
         p.write_text(new_content, encoding="utf-8")
         logger.info("File edited: %s", path)
 
-        diff  = _diff_text(content, new_content, p.name)
+        diff = _diff_text(content, new_content, p.name)
         bak_note = f"  (backup: {bak})" if bak else ""
         return f"✓ Edited {path}{bak_note}\n\n{diff}"
-        
+
     except ValueError as e:
         return f"Security error: {e}"
     except Exception as e:
@@ -199,7 +201,7 @@ def run_bash(command: str, timeout: int = 30) -> str:
             _command_executor.max_execution_time = old_timeout
         logger.info("Command executed successfully: %s", command[:50])
         return result
-        
+
     except ValueError as e:
         logger.warning("Command blocked: %s - %s", command[:50], e)
         return f"Security error: {e}"
@@ -214,7 +216,7 @@ def glob_files(pattern: str, path: str = ".") -> str:
         # Sanitize inputs
         pattern = sanitize_user_input(pattern, max_length=200)
         path = sanitize_user_input(path, max_length=500)
-        
+
         root = _safe_path(path)
         if not root.exists():
             return f"Error: Path not found: {path}"
@@ -226,14 +228,14 @@ def glob_files(pattern: str, path: str = ".") -> str:
 
         if not filtered:
             return f"No files matching '{pattern}' in {path}"
-        
+
         # Limit results
         result_lines = [str(m.relative_to(root)) for m in filtered[:500]]
         if len(filtered) > 500:
             result_lines.append(f"... (showing first 500 of {len(filtered)} matches)")
-            
+
         return "\n".join(result_lines)
-        
+
     except ValueError as e:
         return f"Security error: {e}"
     except Exception as e:
@@ -318,6 +320,7 @@ def list_directory(path: str = ".") -> str:
 
 
 # ── New Tool Handlers ────────────────────────────────────────────────────────
+
 
 def append_file(path: str, content: str) -> str:
     """Append content to a file, creating it if necessary."""
@@ -409,7 +412,7 @@ def http_request(
 ) -> str:
     """Make an HTTP request and return the response."""
     try:
-        method  = method.upper()
+        method = method.upper()
         if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}:
             return f"Security error: unsupported HTTP method: {method}"
 
@@ -427,9 +430,7 @@ def http_request(
         if "User-Agent" not in headers:
             headers["User-Agent"] = "Dan/2.5 (Development Automation Network)"
 
-        kwargs: dict = dict(
-            url=url, headers=headers, timeout=timeout, follow_redirects=True
-        )
+        kwargs: dict = dict(url=url, headers=headers, timeout=timeout, follow_redirects=True)
         if body:
             kwargs["content"] = body.encode()
 
@@ -447,6 +448,7 @@ def http_request(
         if json_mode or "json" in ct:
             try:
                 import json as _json
+
                 lines.append(_json.dumps(r.json(), indent=2)[:10_000])
             except Exception:
                 lines.append(r.text[:10_000])
@@ -465,17 +467,27 @@ def http_request(
 
 # ── Registration ─────────────────────────────────────────────────────────────
 
+
 def register_core_tools() -> None:
     """Register all core tools."""
 
     registry.register(
-        name="Read", description="Read a file's contents.",
+        name="Read",
+        description="Read a file's contents.",
         parameters={
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "File path to read"},
-                "offset": {"type": "integer", "description": "Starting line (0-indexed)", "default": 0},
-                "limit": {"type": "integer", "description": "Max lines to read (0=all)", "default": 0},
+                "offset": {
+                    "type": "integer",
+                    "description": "Starting line (0-indexed)",
+                    "default": 0,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max lines to read (0=all)",
+                    "default": 0,
+                },
             },
             "required": ["path"],
         },
@@ -483,7 +495,8 @@ def register_core_tools() -> None:
     )
 
     registry.register(
-        name="Write", description="Write content to a file. Shows diff of changes.",
+        name="Write",
+        description="Write content to a file. Shows diff of changes.",
         parameters={
             "type": "object",
             "properties": {
@@ -496,12 +509,16 @@ def register_core_tools() -> None:
     )
 
     registry.register(
-        name="Edit", description="Replace exact text in a file. old_text must match exactly once.",
+        name="Edit",
+        description="Replace exact text in a file. old_text must match exactly once.",
         parameters={
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "File path to edit"},
-                "old_text": {"type": "string", "description": "Exact text to find (must match once)"},
+                "old_text": {
+                    "type": "string",
+                    "description": "Exact text to find (must match once)",
+                },
                 "new_text": {"type": "string", "description": "Replacement text"},
             },
             "required": ["path", "old_text", "new_text"],
@@ -510,7 +527,8 @@ def register_core_tools() -> None:
     )
 
     registry.register(
-        name="Bash", description="Execute a shell command.",
+        name="Bash",
+        description="Execute a shell command.",
         parameters={
             "type": "object",
             "properties": {
@@ -523,7 +541,8 @@ def register_core_tools() -> None:
     )
 
     registry.register(
-        name="Glob", description="Find files matching a glob pattern.",
+        name="Glob",
+        description="Find files matching a glob pattern.",
         parameters={
             "type": "object",
             "properties": {
@@ -536,13 +555,18 @@ def register_core_tools() -> None:
     )
 
     registry.register(
-        name="Grep", description="Search for a regex pattern in files.",
+        name="Grep",
+        description="Search for a regex pattern in files.",
         parameters={
             "type": "object",
             "properties": {
                 "pattern": {"type": "string", "description": "Regex pattern to search for"},
                 "path": {"type": "string", "description": "Root directory", "default": "."},
-                "include": {"type": "string", "description": "File glob filter (e.g. '*.py')", "default": ""},
+                "include": {
+                    "type": "string",
+                    "description": "File glob filter (e.g. '*.py')",
+                    "default": "",
+                },
             },
             "required": ["pattern"],
         },
@@ -550,7 +574,8 @@ def register_core_tools() -> None:
     )
 
     registry.register(
-        name="ListDir", description="List directory contents as a tree.",
+        name="ListDir",
+        description="List directory contents as a tree.",
         parameters={
             "type": "object",
             "properties": {
@@ -568,7 +593,7 @@ def register_core_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "path":    {"type": "string", "description": "File path"},
+                "path": {"type": "string", "description": "File path"},
                 "content": {"type": "string", "description": "Content to append"},
             },
             "required": ["path", "content"],
@@ -596,7 +621,7 @@ def register_core_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "src":  {"type": "string", "description": "Source path"},
+                "src": {"type": "string", "description": "Source path"},
                 "dest": {"type": "string", "description": "Destination path"},
             },
             "required": ["src", "dest"],
@@ -610,7 +635,7 @@ def register_core_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "src":  {"type": "string", "description": "Source file path"},
+                "src": {"type": "string", "description": "Source file path"},
                 "dest": {"type": "string", "description": "Destination path"},
             },
             "required": ["src", "dest"],
@@ -627,17 +652,25 @@ def register_core_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "url":     {"type": "string",  "description": "Request URL"},
-                "method":  {"type": "string",  "description": "HTTP method", "default": "GET"},
-                "headers": {"type": "object",  "description": "Request headers dict", "default": {}},
-                "body":    {"type": "string",  "description": "Request body (for POST/PUT)", "default": ""},
+                "url": {"type": "string", "description": "Request URL"},
+                "method": {"type": "string", "description": "HTTP method", "default": "GET"},
+                "headers": {"type": "object", "description": "Request headers dict", "default": {}},
+                "body": {
+                    "type": "string",
+                    "description": "Request body (for POST/PUT)",
+                    "default": "",
+                },
                 "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 30},
-                "json_mode": {"type": "boolean",
-                              "description": "Parse response as JSON and pretty-print",
-                              "default": False},
-                "allow_local": {"type": "boolean",
-                                "description": "Allow loopback/private-network URLs",
-                                "default": False},
+                "json_mode": {
+                    "type": "boolean",
+                    "description": "Parse response as JSON and pretty-print",
+                    "default": False,
+                },
+                "allow_local": {
+                    "type": "boolean",
+                    "description": "Allow loopback/private-network URLs",
+                    "default": False,
+                },
             },
             "required": ["url"],
         },

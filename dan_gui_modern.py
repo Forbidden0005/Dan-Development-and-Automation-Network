@@ -91,7 +91,9 @@ class DanModernGUI(DanGUI):
         outer.grid_columnconfigure(1, weight=1)
         outer.grid_columnconfigure(3, weight=0)
 
-        GradientStrip(outer, color_one=PURPLE, color_two=INDIGO, height=3, bg=SURFACE).place(x=0, y=0, relwidth=1)
+        GradientStrip(outer, color_one=PURPLE, color_two=INDIGO, height=3, bg=SURFACE).place(
+            x=0, y=0, relwidth=1
+        )
 
         brand = ctk.CTkFrame(outer, fg_color="transparent")
         brand.grid(row=0, column=0, padx=(20, 10), pady=16, sticky="w")
@@ -122,7 +124,9 @@ class DanModernGUI(DanGUI):
         chips = ctk.CTkFrame(center, fg_color="transparent")
         chips.grid(row=0, column=0)
 
-        self._model_badge = ctk.CTkFrame(chips, fg_color=CARD, corner_radius=18, border_width=1, border_color=BORDER2)
+        self._model_badge = ctk.CTkFrame(
+            chips, fg_color=CARD, corner_radius=18, border_width=1, border_color=BORDER2
+        )
         self._model_badge.grid(row=0, column=0, padx=(0, 8))
         self._model_lbl = ctk.CTkLabel(
             self._model_badge,
@@ -132,7 +136,9 @@ class DanModernGUI(DanGUI):
         )
         self._model_lbl.grid(padx=4, pady=3)
 
-        self._provider_badge = ctk.CTkFrame(chips, fg_color=SURFACE2, corner_radius=18, border_width=1, border_color=BORDER)
+        self._provider_badge = ctk.CTkFrame(
+            chips, fg_color=SURFACE2, corner_radius=18, border_width=1, border_color=BORDER
+        )
         self._provider_badge.grid(row=0, column=1, padx=(0, 8))
         self._provider_lbl = ctk.CTkLabel(
             self._provider_badge,
@@ -142,9 +148,13 @@ class DanModernGUI(DanGUI):
         )
         self._provider_lbl.grid(padx=4, pady=3)
 
-        self._status_chip = ctk.CTkFrame(chips, fg_color="#0f1d17", corner_radius=18, border_width=1, border_color="#1f5133")
+        self._status_chip = ctk.CTkFrame(
+            chips, fg_color="#0f1d17", corner_radius=18, border_width=1, border_color="#1f5133"
+        )
         self._status_chip.grid(row=0, column=2)
-        self._status_dot = ctk.CTkLabel(self._status_chip, text="●", text_color=SUCCESS, font=ctk.CTkFont(size=10))
+        self._status_dot = ctk.CTkLabel(
+            self._status_chip, text="●", text_color=SUCCESS, font=ctk.CTkFont(size=10)
+        )
         self._status_dot.grid(row=0, column=0, padx=(8, 4), pady=3)
         self._status_txt = ctk.CTkLabel(
             self._status_chip,
@@ -156,9 +166,15 @@ class DanModernGUI(DanGUI):
 
         actions = ctk.CTkFrame(outer, fg_color="transparent")
         actions.grid(row=0, column=3, padx=(10, 18), pady=16, sticky="e")
-        _btn(actions, "Prompts", self.show_prompts, w=84, h=36, fg=CARD, hov=CARD_HOV).grid(row=0, column=0, padx=(0, 8))
-        _btn(actions, "Actions", self.show_actions, w=84, h=36, fg=CARD, hov=CARD_HOV).grid(row=0, column=1, padx=(0, 8))
-        _btn(actions, "Settings", self.show_settings, w=88, h=36, fg=PURPLE_DIM, hov=PURPLE).grid(row=0, column=2)
+        _btn(actions, "Prompts", self.show_prompts, w=84, h=36, fg=CARD, hov=CARD_HOV).grid(
+            row=0, column=0, padx=(0, 8)
+        )
+        _btn(actions, "Actions", self.show_actions, w=84, h=36, fg=CARD, hov=CARD_HOV).grid(
+            row=0, column=1, padx=(0, 8)
+        )
+        _btn(actions, "Settings", self.show_settings, w=88, h=36, fg=PURPLE_DIM, hov=PURPLE).grid(
+            row=0, column=2
+        )
 
     def _build_sidebar(self):
         self.sidebar = ctk.CTkFrame(self, width=300, fg_color=SURFACE, corner_radius=0)
@@ -169,25 +185,59 @@ class DanModernGUI(DanGUI):
 
         tk.Frame(self.sidebar, width=1, bg=BORDER).place(relx=1.0, rely=0, relheight=1, x=-1)
 
-        hero = ctk.CTkFrame(self.sidebar, fg_color=SURFACE2, corner_radius=18, border_width=1, border_color=BORDER)
+        hero = ctk.CTkFrame(
+            self.sidebar, fg_color=SURFACE2, corner_radius=18, border_width=1, border_color=BORDER
+        )
         hero.grid(row=0, column=0, padx=14, pady=(14, 10), sticky="ew")
         hero.grid_columnconfigure(0, weight=1)
-        _label(hero, "Workspace", 11, "bold", color=TEXT3, anchor="w").grid(row=0, column=0, padx=14, pady=(12, 2), sticky="ew")
-        _label(hero, "Start a fresh chat, reopen a session, or switch models without losing flow.", 13, color=TEXT2, anchor="w", wraplength=240, justify="left").grid(row=1, column=0, padx=14, pady=(0, 8), sticky="ew")
+        _label(hero, "Workspace", 11, "bold", color=TEXT3, anchor="w").grid(
+            row=0, column=0, padx=14, pady=(12, 2), sticky="ew"
+        )
+        _label(
+            hero,
+            "Start a fresh chat, reopen a session, or switch models without losing flow.",
+            13,
+            color=TEXT2,
+            anchor="w",
+            wraplength=240,
+            justify="left",
+        ).grid(row=1, column=0, padx=14, pady=(0, 8), sticky="ew")
         strip = ctk.CTkFrame(hero, fg_color="transparent")
         strip.grid(row=2, column=0, padx=12, pady=(0, 10), sticky="ew")
         strip.grid_columnconfigure((0, 1), weight=1)
-        sessions_card = ctk.CTkFrame(strip, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
+        sessions_card = ctk.CTkFrame(
+            strip, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER
+        )
         sessions_card.grid(row=0, column=0, padx=(0, 6), sticky="ew")
-        self._sessions_stat = ctk.CTkLabel(sessions_card, text="0", text_color=TEXT, font=ctk.CTkFont(size=20, weight="bold"))
+        self._sessions_stat = ctk.CTkLabel(
+            sessions_card, text="0", text_color=TEXT, font=ctk.CTkFont(size=20, weight="bold")
+        )
         self._sessions_stat.grid(row=0, column=0, padx=12, pady=(10, 0), sticky="w")
-        ctk.CTkLabel(sessions_card, text="saved chats", text_color=TEXT3, font=ctk.CTkFont(size=10)).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
-        tools_card = ctk.CTkFrame(strip, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
+        ctk.CTkLabel(
+            sessions_card, text="saved chats", text_color=TEXT3, font=ctk.CTkFont(size=10)
+        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
+        tools_card = ctk.CTkFrame(
+            strip, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER
+        )
         tools_card.grid(row=0, column=1, padx=(6, 0), sticky="ew")
-        self._tools_stat = ctk.CTkLabel(tools_card, text="0", text_color=TEXT, font=ctk.CTkFont(size=20, weight="bold"))
+        self._tools_stat = ctk.CTkLabel(
+            tools_card, text="0", text_color=TEXT, font=ctk.CTkFont(size=20, weight="bold")
+        )
         self._tools_stat.grid(row=0, column=0, padx=12, pady=(10, 0), sticky="w")
-        ctk.CTkLabel(tools_card, text="available tools", text_color=TEXT3, font=ctk.CTkFont(size=10)).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
-        _btn(hero, "＋  New Chat", self.new_chat, h=40, fg=PURPLE_DIM, hov=PURPLE, radius=12, text_color=TEXT, font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")).grid(row=2, column=0, padx=12, pady=(0, 12), sticky="ew")
+        ctk.CTkLabel(
+            tools_card, text="available tools", text_color=TEXT3, font=ctk.CTkFont(size=10)
+        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
+        _btn(
+            hero,
+            "＋  New Chat",
+            self.new_chat,
+            h=40,
+            fg=PURPLE_DIM,
+            hov=PURPLE,
+            radius=12,
+            text_color=TEXT,
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+        ).grid(row=2, column=0, padx=12, pady=(0, 12), sticky="ew")
         hero.grid_slaves(row=2, column=0)[0].grid_configure(row=3, pady=(0, 12))
 
         search = ctk.CTkEntry(
@@ -206,11 +256,23 @@ class DanModernGUI(DanGUI):
         search.grid(row=1, column=0, padx=14, pady=(0, 10), sticky="ew")
         self._search_var.trace_add("write", lambda *_: self.refresh_sidebar())
 
-        insights = ctk.CTkFrame(self.sidebar, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER)
+        insights = ctk.CTkFrame(
+            self.sidebar, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER
+        )
         insights.grid(row=2, column=0, padx=14, pady=(0, 10), sticky="ew")
         insights.grid_columnconfigure(0, weight=1)
-        _label(insights, "Session flow", 10, "bold", color=TEXT3, anchor="w").grid(row=0, column=0, padx=12, pady=(10, 4), sticky="ew")
-        _label(insights, "Search your recent work, pick up where you left off, and keep the chat loop tidy.", 12, color=TEXT2, anchor="w", wraplength=244, justify="left").grid(row=1, column=0, padx=12, pady=(0, 10), sticky="ew")
+        _label(insights, "Session flow", 10, "bold", color=TEXT3, anchor="w").grid(
+            row=0, column=0, padx=12, pady=(10, 4), sticky="ew"
+        )
+        _label(
+            insights,
+            "Search your recent work, pick up where you left off, and keep the chat loop tidy.",
+            12,
+            color=TEXT2,
+            anchor="w",
+            wraplength=244,
+            justify="left",
+        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="ew")
 
         ctk.CTkLabel(
             self.sidebar,
@@ -229,11 +291,23 @@ class DanModernGUI(DanGUI):
         self.session_list.grid(row=4, column=0, sticky="nsew", padx=6, pady=(0, 10))
         self.session_list.grid_columnconfigure(0, weight=1)
 
-        footer = ctk.CTkFrame(self.sidebar, fg_color=SURFACE2, corner_radius=14, border_width=1, border_color=BORDER)
+        footer = ctk.CTkFrame(
+            self.sidebar, fg_color=SURFACE2, corner_radius=14, border_width=1, border_color=BORDER
+        )
         footer.grid(row=5, column=0, padx=14, pady=(0, 14), sticky="ew")
         footer.grid_columnconfigure(0, weight=1)
-        _label(footer, "Quick Tips", 10, "bold", color=TEXT3, anchor="w").grid(row=0, column=0, padx=12, pady=(10, 2), sticky="ew")
-        _label(footer, "Use Ctrl+N for a new chat, Ctrl+P for prompts, and Esc to interrupt generation.", 12, color=TEXT2, anchor="w", wraplength=240, justify="left").grid(row=1, column=0, padx=12, pady=(0, 10), sticky="ew")
+        _label(footer, "Quick Tips", 10, "bold", color=TEXT3, anchor="w").grid(
+            row=0, column=0, padx=12, pady=(10, 2), sticky="ew"
+        )
+        _label(
+            footer,
+            "Use Ctrl+N for a new chat, Ctrl+P for prompts, and Esc to interrupt generation.",
+            12,
+            color=TEXT2,
+            anchor="w",
+            wraplength=240,
+            justify="left",
+        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="ew")
 
         self.refresh_sidebar()
         self._apply_shell_metrics()
@@ -250,7 +324,9 @@ class DanModernGUI(DanGUI):
         frame.grid(sticky="ew", pady=4, padx=4)
         frame.grid_columnconfigure(1, weight=1)
 
-        rail = ctk.CTkFrame(frame, width=6, fg_color=PURPLE if active else SURFACE2, corner_radius=8)
+        rail = ctk.CTkFrame(
+            frame, width=6, fg_color=PURPLE if active else SURFACE2, corner_radius=8
+        )
         rail.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=(8, 10), pady=8)
 
         ctk.CTkLabel(
@@ -304,20 +380,42 @@ class DanModernGUI(DanGUI):
         self._chat.grid_columnconfigure(0, weight=1)
         self._chat.grid_rowconfigure(1, weight=1)
 
-        hero = ctk.CTkFrame(self._chat, fg_color=SURFACE, corner_radius=22, border_width=1, border_color=BORDER)
+        hero = ctk.CTkFrame(
+            self._chat, fg_color=SURFACE, corner_radius=22, border_width=1, border_color=BORDER
+        )
         hero.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 14))
         hero.grid_columnconfigure(0, weight=1)
-        _label(hero, "Focused build workspace", 11, "bold", color=TEXT3, anchor="w").grid(row=0, column=0, padx=18, pady=(14, 4), sticky="ew")
-        _label(hero, "Ask, inspect, iterate, and keep momentum without fighting the interface.", 18, "bold", color=TEXT, anchor="w").grid(row=1, column=0, padx=18, pady=(0, 4), sticky="ew")
+        _label(hero, "Focused build workspace", 11, "bold", color=TEXT3, anchor="w").grid(
+            row=0, column=0, padx=18, pady=(14, 4), sticky="ew"
+        )
+        _label(
+            hero,
+            "Ask, inspect, iterate, and keep momentum without fighting the interface.",
+            18,
+            "bold",
+            color=TEXT,
+            anchor="w",
+        ).grid(row=1, column=0, padx=18, pady=(0, 4), sticky="ew")
         self._hero_subtitle = _label(hero, "", 12, color=TEXT2, anchor="w")
         self._hero_subtitle.grid(row=2, column=0, padx=18, pady=(0, 10), sticky="ew")
         quick = build_actions_text(get_all_actions())
-        _label(hero, quick or "/help  —  No actions registered yet", 12, color=TEXT2, anchor="w", wraplength=820, justify="left").grid(row=3, column=0, padx=18, pady=(0, 10), sticky="ew")
+        _label(
+            hero,
+            quick or "/help  —  No actions registered yet",
+            12,
+            color=TEXT2,
+            anchor="w",
+            wraplength=820,
+            justify="left",
+        ).grid(row=3, column=0, padx=18, pady=(0, 10), sticky="ew")
 
         starters = ctk.CTkFrame(hero, fg_color="transparent")
         starters.grid(row=4, column=0, padx=18, pady=(0, 16), sticky="w")
         prompts = [
-            ("Review this repo", "Review this repository and tell me the highest-value next improvements."),
+            (
+                "Review this repo",
+                "Review this repository and tell me the highest-value next improvements.",
+            ),
             ("Plan a feature", "Help me plan the next feature with clear implementation steps."),
             ("Fix a bug", "Help me debug a failing workflow and propose the smallest safe fix."),
         ]
@@ -334,7 +432,9 @@ class DanModernGUI(DanGUI):
                 font=ctk.CTkFont(family="Segoe UI", size=11),
             ).grid(row=0, column=index, padx=(0, 8))
 
-        board = ctk.CTkFrame(self._chat, fg_color=SURFACE2, corner_radius=22, border_width=1, border_color=BORDER)
+        board = ctk.CTkFrame(
+            self._chat, fg_color=SURFACE2, corner_radius=22, border_width=1, border_color=BORDER
+        )
         board.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 12))
         board.grid_columnconfigure(0, weight=1)
         board.grid_rowconfigure(0, weight=1)
@@ -356,21 +456,31 @@ class DanModernGUI(DanGUI):
         outer.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 18))
         outer.grid_columnconfigure(0, weight=1)
 
-        composer = ctk.CTkFrame(outer, fg_color=SURFACE, corner_radius=20, border_width=1, border_color=BORDER2)
+        composer = ctk.CTkFrame(
+            outer, fg_color=SURFACE, corner_radius=20, border_width=1, border_color=BORDER2
+        )
         composer.grid(row=0, column=0, sticky="ew")
         composer.grid_columnconfigure(1, weight=1)
 
         rail = ctk.CTkFrame(composer, fg_color="transparent")
         rail.grid(row=0, column=0, padx=(14, 10), pady=12, sticky="ns")
         rail.grid_rowconfigure((0, 1, 2), weight=1)
-        _btn(rail, "📎", self.attach_file, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(row=0, column=0, pady=(0, 8))
-        _btn(rail, "⚙", self.show_settings, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(row=1, column=0, pady=(0, 8))
-        _btn(rail, "⌘", self.show_actions, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(row=2, column=0)
+        _btn(rail, "📎", self.attach_file, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(
+            row=0, column=0, pady=(0, 8)
+        )
+        _btn(rail, "⚙", self.show_settings, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(
+            row=1, column=0, pady=(0, 8)
+        )
+        _btn(rail, "⌘", self.show_actions, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(
+            row=2, column=0
+        )
 
         text_wrap = ctk.CTkFrame(composer, fg_color="transparent")
         text_wrap.grid(row=0, column=1, sticky="ew", pady=12)
         text_wrap.grid_columnconfigure(0, weight=1)
-        _label(text_wrap, "Message Dan", 10, "bold", color=TEXT3, anchor="w").grid(row=0, column=0, sticky="ew", padx=(0, 0), pady=(0, 6))
+        _label(text_wrap, "Message Dan", 10, "bold", color=TEXT3, anchor="w").grid(
+            row=0, column=0, sticky="ew", padx=(0, 0), pady=(0, 6)
+        )
         self.input_box = ctk.CTkTextbox(
             text_wrap,
             height=82,

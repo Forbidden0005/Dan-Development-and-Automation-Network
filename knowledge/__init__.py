@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class KnowledgeEntry:
     """A stored knowledge entry."""
+
     name: str
     content: str
     scope: str  # "user" or "project"
@@ -83,9 +84,11 @@ def search(query: str, scope: str | None = None) -> list[KnowledgeEntry]:
             try:
                 data = json.loads(fp.read_text())
                 entry = KnowledgeEntry(**data)
-                if (query_lower in entry.name.lower() or
-                    query_lower in entry.content.lower() or
-                    any(query_lower in t.lower() for t in (entry.tags or []))):
+                if (
+                    query_lower in entry.name.lower()
+                    or query_lower in entry.content.lower()
+                    or any(query_lower in t.lower() for t in (entry.tags or []))
+                ):
                     results.append(entry)
             except Exception:
                 continue
@@ -128,6 +131,7 @@ def get_context_block() -> str:
 
 # ── Tool Handlers ────────────────────────────────────────────────────────────
 
+
 def _remember(name: str, content: str, scope: str = "project", tags: str = "") -> str:
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     entry = KnowledgeEntry(name=name, content=content, scope=scope, tags=tag_list)
@@ -161,7 +165,8 @@ def _list_knowledge() -> str:
 def register_knowledge_tools() -> None:
     """Register knowledge tools."""
     registry.register(
-        name="Remember", description="Save knowledge for future sessions.",
+        name="Remember",
+        description="Save knowledge for future sessions.",
         parameters={
             "type": "object",
             "properties": {
@@ -172,11 +177,13 @@ def register_knowledge_tools() -> None:
             },
             "required": ["name", "content"],
         },
-        handler=_remember, category="knowledge",
+        handler=_remember,
+        category="knowledge",
     )
 
     registry.register(
-        name="Forget", description="Delete a stored knowledge entry.",
+        name="Forget",
+        description="Delete a stored knowledge entry.",
         parameters={
             "type": "object",
             "properties": {
@@ -185,24 +192,33 @@ def register_knowledge_tools() -> None:
             },
             "required": ["name"],
         },
-        handler=_forget, category="knowledge",
+        handler=_forget,
+        category="knowledge",
     )
 
     registry.register(
-        name="Recall", description="Search stored knowledge by keyword.",
+        name="Recall",
+        description="Search stored knowledge by keyword.",
         parameters={
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "scope": {"type": "string", "description": "Scope filter (user/project)", "default": ""},
+                "scope": {
+                    "type": "string",
+                    "description": "Scope filter (user/project)",
+                    "default": "",
+                },
             },
             "required": ["query"],
         },
-        handler=_recall, category="knowledge",
+        handler=_recall,
+        category="knowledge",
     )
 
     registry.register(
-        name="ListKnowledge", description="List all stored knowledge entries.",
+        name="ListKnowledge",
+        description="List all stored knowledge entries.",
         parameters={"type": "object", "properties": {}},
-        handler=_list_knowledge, category="knowledge",
+        handler=_list_knowledge,
+        category="knowledge",
     )

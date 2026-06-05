@@ -26,10 +26,7 @@ def _load_project(path: str = ".") -> str:
 def _show_project() -> str:
     """Show the currently loaded project map."""
     if not project_context.is_loaded():
-        return (
-            "No project loaded.\n"
-            "Use LoadProject to scan a directory, or ask Dan to load one."
-        )
+        return "No project loaded.\n" "Use LoadProject to scan a directory, or ask Dan to load one."
     return project_context.get()
 
 

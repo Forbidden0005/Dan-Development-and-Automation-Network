@@ -144,7 +144,9 @@ class LiveBubble:
         self.outer.grid_columnconfigure(1, weight=1)
         self.outer.grid_columnconfigure(2, minsize=80, weight=0)
 
-        avatar = ctk.CTkFrame(self.outer, width=36, height=36, fg_color=purple_dim, corner_radius=18)
+        avatar = ctk.CTkFrame(
+            self.outer, width=36, height=36, fg_color=purple_dim, corner_radius=18
+        )
         avatar.grid(row=0, column=0, padx=(0, 10), sticky="n", pady=(4, 0))
         avatar.grid_propagate(False)
         ctk.CTkLabel(

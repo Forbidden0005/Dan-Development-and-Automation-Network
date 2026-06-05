@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Action:
     """A reusable action template."""
+
     name: str
     description: str
     prompt: str
@@ -26,13 +27,13 @@ BUILTIN_ACTIONS: dict[str, Action] = {
         name="commit",
         description="Generate a git commit with a descriptive message",
         prompt="Look at the current git diff (staged and unstaged). Write a clear, "
-               "conventional commit message. Stage all changes and commit.",
+        "conventional commit message. Stage all changes and commit.",
     ),
     "review": Action(
         name="review",
         description="Review the current code changes",
         prompt="Look at the current git diff. Review the changes for bugs, style issues, "
-               "security concerns, and suggest improvements. Be specific and actionable.",
+        "security concerns, and suggest improvements. Be specific and actionable.",
     ),
     "test": Action(
         name="test",
@@ -43,52 +44,52 @@ BUILTIN_ACTIONS: dict[str, Action] = {
         name="explain",
         description="Explain the current project structure",
         prompt="Analyze the project structure, key files, dependencies, and architecture. "
-               "Provide a clear overview of how the codebase is organized.",
+        "Provide a clear overview of how the codebase is organized.",
     ),
     "changelog": Action(
         name="changelog",
         description="Generate a user-friendly changelog from git commits",
         prompt="Use the Changelog tool to get the raw commit history, then rewrite it as "
-               "polished, user-friendly release notes. Group changes into: New Features, "
-               "Improvements, Bug Fixes, and Breaking Changes. Translate technical commit "
-               "messages into language a customer would understand. Save the result to CHANGELOG.md.",
+        "polished, user-friendly release notes. Group changes into: New Features, "
+        "Improvements, Bug Fixes, and Breaking Changes. Translate technical commit "
+        "messages into language a customer would understand. Save the result to CHANGELOG.md.",
     ),
     "organize": Action(
         name="organize",
         description="Analyze and suggest file organization improvements",
         prompt="Analyze the current directory structure using ListDir and Glob. Identify: "
-               "1) Files that seem misplaced, 2) Missing standard files (README, .gitignore, etc), "
-               "3) Inconsistent naming, 4) Empty or redundant directories. Use FindDuplicates to check "
-               "for duplicate files. Suggest a better organization and offer to make the changes.",
+        "1) Files that seem misplaced, 2) Missing standard files (README, .gitignore, etc), "
+        "3) Inconsistent naming, 4) Empty or redundant directories. Use FindDuplicates to check "
+        "for duplicate files. Suggest a better organization and offer to make the changes.",
     ),
     "scaffold": Action(
         name="scaffold",
         description="Create a new project from a template",
         prompt="Ask the user what kind of project they want to create (Python, Node, or Web), "
-               "the project name, and any specific requirements. Use the Scaffold tool to create "
-               "the project structure, then customize the generated files based on their requirements.",
+        "the project name, and any specific requirements. Use the Scaffold tool to create "
+        "the project structure, then customize the generated files based on their requirements.",
     ),
     "research": Action(
         name="research",
         description="Research a topic using web search and summarize findings",
         prompt="Ask the user what topic to research. Use WebSearch to find relevant sources, "
-               "then use WebFetch to read the top results in detail. Synthesize the information "
-               "into a well-structured summary with key findings, sources, and actionable insights. "
-               "Save the research to a markdown file.",
+        "then use WebFetch to read the top results in detail. Synthesize the information "
+        "into a well-structured summary with key findings, sources, and actionable insights. "
+        "Save the research to a markdown file.",
     ),
     "webtest": Action(
         name="webtest",
         description="Test a web application for basic health and issues",
         prompt="Ask the user for the URL to test. Use the WebTest tool to check the server "
-               "health, then use WebFetch to analyze the page content. Report on: server status, "
-               "page load, obvious errors, missing meta tags, and basic accessibility issues.",
+        "health, then use WebFetch to analyze the page content. Report on: server status, "
+        "page load, obvious errors, missing meta tags, and basic accessibility issues.",
     ),
     "deps": Action(
         name="deps",
         description="Audit project dependencies for issues",
         prompt="Identify the project type (Python/Node/etc) by checking for requirements.txt, "
-               "package.json, pyproject.toml, etc. List all dependencies, check for outdated "
-               "packages, known security issues, and unused imports. Suggest improvements.",
+        "package.json, pyproject.toml, etc. List all dependencies, check for outdated "
+        "packages, known security issues, and unused imports. Suggest improvements.",
     ),
 }
 
@@ -124,6 +125,7 @@ def get_action(name: str) -> Action | None:
 
 # ── Tool Handlers ────────────────────────────────────────────────────────────
 
+
 def _execute_action(name: str) -> str:
     action = get_action(name)
     if not action:
@@ -146,7 +148,8 @@ def _list_actions() -> str:
 def register_action_tools() -> None:
     """Register action tools."""
     registry.register(
-        name="Execute", description="Execute a named action (automation template).",
+        name="Execute",
+        description="Execute a named action (automation template).",
         parameters={
             "type": "object",
             "properties": {
@@ -154,11 +157,14 @@ def register_action_tools() -> None:
             },
             "required": ["name"],
         },
-        handler=_execute_action, category="actions",
+        handler=_execute_action,
+        category="actions",
     )
 
     registry.register(
-        name="ListActions", description="List all available actions.",
+        name="ListActions",
+        description="List all available actions.",
         parameters={"type": "object", "properties": {}},
-        handler=_list_actions, category="actions",
+        handler=_list_actions,
+        category="actions",
     )

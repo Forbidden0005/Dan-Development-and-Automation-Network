@@ -14,7 +14,7 @@ PROJECT_DATA_DIR = Path("Dan")
 
 # Provider config
 DEFAULT_PROVIDER = os.environ.get("DAN_PROVIDER", "ollama")
-DEFAULT_MODEL    = os.environ.get("DAN_MODEL",    "qwen2.5-coder:7b")
+DEFAULT_MODEL = os.environ.get("DAN_MODEL", "qwen2.5-coder:7b")
 
 # Context limits per model family
 CONTEXT_LIMITS: dict[str, int] = {
@@ -32,6 +32,7 @@ TOKEN_ESTIMATE_RATIO = 3.5  # chars per token estimate
 # Workers
 MAX_WORKERS = 3
 MAX_WORKER_DEPTH = 3
+
 
 # Colors
 class Colors:

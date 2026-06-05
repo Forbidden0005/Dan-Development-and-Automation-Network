@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class WorkerTask:
     """A worker task."""
+
     id: str
     prompt: str
     status: str = "pending"  # pending, running, done, error
@@ -31,8 +32,9 @@ class WorkerPool:
         self._tasks: dict[str, WorkerTask] = {}
         self._lock = threading.Lock()
 
-    def spawn(self, prompt: str, worker_type: str = "general",
-              wait: bool = False, agent_fn: Any = None) -> WorkerTask:
+    def spawn(
+        self, prompt: str, worker_type: str = "general", wait: bool = False, agent_fn: Any = None
+    ) -> WorkerTask:
         """Spawn a worker task."""
         task = WorkerTask(
             id=uuid.uuid4().hex[:8],
@@ -85,6 +87,7 @@ def get_pool() -> WorkerPool:
 
 # ── Tool Handlers ────────────────────────────────────────────────────────────
 
+
 def _spawn(prompt: str, worker_type: str = "general", wait: bool = False) -> str:
     task = _pool.spawn(prompt, worker_type, wait=wait)
     if wait and task.status == "done":
@@ -115,7 +118,8 @@ def _list_workers() -> str:
 def register_worker_tools() -> None:
     """Register worker tools."""
     registry.register(
-        name="Spawn", description="Spawn a background worker to handle a task.",
+        name="Spawn",
+        description="Spawn a background worker to handle a task.",
         parameters={
             "type": "object",
             "properties": {
@@ -125,11 +129,13 @@ def register_worker_tools() -> None:
             },
             "required": ["prompt"],
         },
-        handler=_spawn, category="workers",
+        handler=_spawn,
+        category="workers",
     )
 
     registry.register(
-        name="CheckWorker", description="Check status/result of a worker.",
+        name="CheckWorker",
+        description="Check status/result of a worker.",
         parameters={
             "type": "object",
             "properties": {
@@ -137,11 +143,14 @@ def register_worker_tools() -> None:
             },
             "required": ["task_id"],
         },
-        handler=_check_worker, category="workers",
+        handler=_check_worker,
+        category="workers",
     )
 
     registry.register(
-        name="ListWorkers", description="List all worker tasks.",
+        name="ListWorkers",
+        description="List all worker tasks.",
         parameters={"type": "object", "properties": {}},
-        handler=_list_workers, category="workers",
+        handler=_list_workers,
+        category="workers",
     )

@@ -14,6 +14,7 @@ _CACHED_SCHEMAS: list[dict] | None = None
 @dataclass
 class Tool:
     """A registered tool."""
+
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema for input_schema
@@ -29,21 +30,34 @@ class Tool:
         }
 
 
-def register(name: str, description: str, parameters: dict[str, Any],
-             handler: Callable[..., str], category: str = "core") -> None:
+def register(
+    name: str,
+    description: str,
+    parameters: dict[str, Any],
+    handler: Callable[..., str],
+    category: str = "core",
+) -> None:
     """Register a tool."""
     global _CACHED_SCHEMAS
     _TOOLS[name] = Tool(
-        name=name, description=description,
-        parameters=parameters, handler=handler, category=category,
+        name=name,
+        description=description,
+        parameters=parameters,
+        handler=handler,
+        category=category,
     )
     # Invalidate schema cache when tools are registered
     _CACHED_SCHEMAS = None
     logger.debug("Registered tool: %s (%s)", name, category)
 
 
-def register_tool(name: str, description: str, parameters: dict[str, Any],
-                  handler: Callable[..., str], category: str = "core") -> None:
+def register_tool(
+    name: str,
+    description: str,
+    parameters: dict[str, Any],
+    handler: Callable[..., str],
+    category: str = "core",
+) -> None:
     """Backward-compatible alias for older callers."""
     register(
         name=name,

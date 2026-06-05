@@ -11,17 +11,20 @@ class VeniceProvider:
 
     VENICE_BASE_URL = "https://api.venice.ai/api/v1"
     FUNCTION_CALLING_MODELS = {
-        "zai-org-glm-4.7", "mistral-31-24b", "llama-3.2-3b", "qwen3-4b",
+        "zai-org-glm-4.7",
+        "mistral-31-24b",
+        "llama-3.2-3b",
+        "qwen3-4b",
     }
 
-    def __init__(self, model: str = "llama-3.3-70b", api_key: str = "",
-                 base_url: str = ""):
+    def __init__(self, model: str = "llama-3.3-70b", api_key: str = "", base_url: str = ""):
         self.model = model
         self.base_url = base_url or self.VENICE_BASE_URL
 
         if not api_key:
             try:
                 from api_config import get_secret
+
                 api_key = get_secret("venice.api_key")
             except Exception:
                 pass
@@ -36,12 +39,18 @@ class VeniceProvider:
 
         try:
             import openai
+
             self._openai = openai
         except ImportError:
             raise ImportError("pip install openai")
 
-    def chat(self, messages: list[Message], system: str = "",
-             tools: list[dict] | None = None, max_tokens: int = 8192) -> Response:
+    def chat(
+        self,
+        messages: list[Message],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 8192,
+    ) -> Response:
         client = self._openai.OpenAI(
             api_key=self._api_key,
             base_url=self.base_url,
@@ -61,14 +70,16 @@ class VeniceProvider:
         if tools and self.model in self.FUNCTION_CALLING_MODELS:
             oai_tools = []
             for t in tools:
-                oai_tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": t["name"],
-                        "description": t.get("description", ""),
-                        "parameters": t.get("input_schema", {}),
+                oai_tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t.get("description", ""),
+                            "parameters": t.get("input_schema", {}),
+                        },
                     }
-                })
+                )
             kwargs["tools"] = oai_tools
 
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
@@ -93,11 +104,13 @@ class VeniceProvider:
 
         if choice.message.tool_calls:
             for tc in choice.message.tool_calls:
-                resp.tool_calls.append(ToolCall(
-                    id=tc.id,
-                    name=tc.function.name,
-                    input=parse_tool_arguments(tc.function.arguments),
-                ))
+                resp.tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        input=parse_tool_arguments(tc.function.arguments),
+                    )
+                )
         return resp
 
     @property

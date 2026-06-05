@@ -39,46 +39,52 @@ _PYTHON_CANDIDATES = ("python", "py")
 
 # Maps extension -> (interpreter_cmd, file_extension_for_tempfile)
 _INTERPRETERS: dict[str, tuple[list[str], str]] = {
-    "python":     (["python"],              ".py"),
-    "py":         (["python"],              ".py"),
-    "javascript": (["node"],                ".js"),
-    "js":         (["node"],                ".js"),
-    "typescript": (["npx", "ts-node"],      ".ts"),
-    "ts":         (["npx", "ts-node"],      ".ts"),
-    "go":         (["go", "run"],           ".go"),
-    "rust":       (None,                    ".rs"),   # needs compile step
-    "bash":       (["bash"],                ".sh"),
-    "shell":      (["bash"],                ".sh"),
-    "sh":         (["bash"],                ".sh"),
+    "python": (["python"], ".py"),
+    "py": (["python"], ".py"),
+    "javascript": (["node"], ".js"),
+    "js": (["node"], ".js"),
+    "typescript": (["npx", "ts-node"], ".ts"),
+    "ts": (["npx", "ts-node"], ".ts"),
+    "go": (["go", "run"], ".go"),
+    "rust": (None, ".rs"),  # needs compile step
+    "bash": (["bash"], ".sh"),
+    "shell": (["bash"], ".sh"),
+    "sh": (["bash"], ".sh"),
     "powershell": (["powershell", "-File"], ".ps1"),
-    "ps1":        (["powershell", "-File"], ".ps1"),
-    "ruby":       (["ruby"],                ".rb"),
-    "rb":         (["ruby"],                ".rb"),
-    "php":        (["php"],                 ".php"),
-    "lua":        (["lua"],                 ".lua"),
-    "perl":       (["perl"],                ".pl"),
+    "ps1": (["powershell", "-File"], ".ps1"),
+    "ruby": (["ruby"], ".rb"),
+    "rb": (["ruby"], ".rb"),
+    "php": (["php"], ".php"),
+    "lua": (["lua"], ".lua"),
+    "perl": (["perl"], ".pl"),
 }
 
 _EXT_TO_LANG: dict[str, str] = {
-    ".py":   "python",   ".pyw":  "python",
-    ".js":   "javascript", ".mjs": "javascript", ".cjs": "javascript",
-    ".ts":   "typescript", ".mts": "typescript",
-    ".go":   "go",
-    ".rs":   "rust",
-    ".sh":   "bash",     ".bash": "bash",    ".zsh": "bash",
-    ".rb":   "ruby",
-    ".php":  "php",
-    ".lua":  "lua",
-    ".pl":   "perl",
-    ".ps1":  "powershell",
+    ".py": "python",
+    ".pyw": "python",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".mts": "typescript",
+    ".go": "go",
+    ".rs": "rust",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".zsh": "bash",
+    ".rb": "ruby",
+    ".php": "php",
+    ".lua": "lua",
+    ".pl": "perl",
+    ".ps1": "powershell",
 }
 
 _TEST_RUNNERS: dict[str, list[str]] = {
     "python": ["python", "-m", "pytest", "--tb=short", "-v"],
     "javascript": ["npm", "test"],
     "typescript": ["npm", "test"],
-    "go":         ["go", "test", "./..."],
-    "rust":       ["cargo", "test"],
+    "go": ["go", "test", "./..."],
+    "rust": ["cargo", "test"],
 }
 
 
@@ -88,11 +94,16 @@ def _detect_lang_from_ext(path: Path) -> str:
 
 def _detect_lang_from_shebang(content: str) -> str:
     first = content.split("\n")[0].strip()
-    if "python" in first: return "python"
-    if "node"   in first: return "javascript"
-    if "bash"   in first or "sh" in first: return "bash"
-    if "ruby"   in first: return "ruby"
-    if "php"    in first: return "php"
+    if "python" in first:
+        return "python"
+    if "node" in first:
+        return "javascript"
+    if "bash" in first or "sh" in first:
+        return "bash"
+    if "ruby" in first:
+        return "ruby"
+    if "php" in first:
+        return "php"
     return ""
 
 
@@ -157,9 +168,13 @@ def _resolve_interpreter_command(command: list[str] | None) -> list[str] | None:
     return command
 
 
-def _run_proc(cmd: list[str], cwd: str | None = None,
-              stdin_text: str = "", timeout: int = 30,
-              validate_command: bool = True) -> tuple[int, str, str, float]:
+def _run_proc(
+    cmd: list[str],
+    cwd: str | None = None,
+    stdin_text: str = "",
+    timeout: int = 30,
+    validate_command: bool = True,
+) -> tuple[int, str, str, float]:
     """Run a subprocess. Returns (returncode, stdout, stderr, elapsed_seconds)."""
     t0 = time.perf_counter()
     try:
@@ -167,10 +182,13 @@ def _run_proc(cmd: list[str], cwd: str | None = None,
         if validate_command:
             _validate_process_command(cmd)
         r = subprocess.run(
-            cmd, cwd=cwd or os.getcwd(),
+            cmd,
+            cwd=cwd or os.getcwd(),
             input=stdin_text or None,
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
         return r.returncode, r.stdout, r.stderr, time.perf_counter() - t0
@@ -184,11 +202,10 @@ def _run_proc(cmd: list[str], cwd: str | None = None,
         return 1, "", str(e), time.perf_counter() - t0
 
 
-def _format_result(code: int, stdout: str, stderr: str,
-                   elapsed: float, label: str = "") -> str:
+def _format_result(code: int, stdout: str, stderr: str, elapsed: float, label: str = "") -> str:
     """Build a clear, actionable result string."""
-    icon    = "OK" if code == 0 else "FAIL"
-    header  = f"{icon} Exit {code}  [{elapsed:.2f}s]"
+    icon = "OK" if code == 0 else "FAIL"
+    header = f"{icon} Exit {code}  [{elapsed:.2f}s]"
     if label:
         header = f"{label}  -  {header}"
 
@@ -214,8 +231,8 @@ def _format_result(code: int, stdout: str, stderr: str,
 
 # -- Tool: RunCode -------------------------------------------------------------
 
-def run_code(code: str, language: str = "python",
-             stdin: str = "", timeout: int = 30) -> str:
+
+def run_code(code: str, language: str = "python", stdin: str = "", timeout: int = 30) -> str:
     """
     Execute a code snippet and return the result.
     Writes to a temp file, runs with the appropriate interpreter, cleans up.
@@ -241,18 +258,15 @@ def run_code(code: str, language: str = "python",
         return _run_rust_snippet(code, timeout)
 
     # Write to temp file
-    with tempfile.NamedTemporaryFile(suffix=ext, mode="w",
-                                     encoding="utf-8", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=ext, mode="w", encoding="utf-8", delete=False) as f:
         f.write(code)
         tmp_path = f.name
 
     try:
         interp = _resolve_interpreter_command(interp)
         cmd = interp + [tmp_path]
-        code_r, stdout, stderr, elapsed = _run_proc(cmd, stdin_text=stdin,
-                                                     timeout=timeout)
-        return _format_result(code_r, stdout, stderr, elapsed,
-                               label=f"RunCode [{language}]")
+        code_r, stdout, stderr, elapsed = _run_proc(cmd, stdin_text=stdin, timeout=timeout)
+        return _format_result(code_r, stdout, stderr, elapsed, label=f"RunCode [{language}]")
     finally:
         try:
             os.unlink(tmp_path)
@@ -268,18 +282,17 @@ def _run_rust_snippet(code: str, timeout: int) -> str:
         src.write_text(code, encoding="utf-8")
 
         # Compile
-        cc, cout, cerr, cel = _run_proc(
-            ["rustc", str(src), "-o", str(out)], timeout=timeout)
+        cc, cout, cerr, cel = _run_proc(["rustc", str(src), "-o", str(out)], timeout=timeout)
         if cc != 0:
             return _format_result(cc, cout, cerr, cel, label="RunCode [rust/compile]")
 
         # Run
-        rc, rout, rerr, rel = _run_proc([str(out)], timeout=timeout,
-                                         validate_command=False)
+        rc, rout, rerr, rel = _run_proc([str(out)], timeout=timeout, validate_command=False)
         return _format_result(rc, rout, rerr, rel, label="RunCode [rust/run]")
 
 
 # -- Tool: RunFile -------------------------------------------------------------
+
 
 def run_file(path: str, args: str = "", stdin: str = "", timeout: int = 30) -> str:
     """
@@ -330,16 +343,16 @@ def run_file(path: str, args: str = "", stdin: str = "", timeout: int = 30) -> s
         cmd = interp + [str(p)] + extra_args
 
     code_r, stdout, stderr, elapsed = _run_proc(
-        cmd, cwd=str(p.parent), stdin_text=stdin, timeout=timeout)
+        cmd, cwd=str(p.parent), stdin_text=stdin, timeout=timeout
+    )
 
-    return _format_result(code_r, stdout, stderr, elapsed,
-                          label=f"RunFile [{p.name}]")
+    return _format_result(code_r, stdout, stderr, elapsed, label=f"RunFile [{p.name}]")
 
 
 # -- Tool: TestLoop ------------------------------------------------------------
 
-def test_loop(path: str = ".", framework: str = "",
-              args: str = "", timeout: int = 120) -> str:
+
+def test_loop(path: str = ".", framework: str = "", args: str = "", timeout: int = 120) -> str:
     """
     Run the test suite and return a clear, fix-oriented summary.
 
@@ -371,31 +384,43 @@ def test_loop(path: str = ".", framework: str = "",
     elif framework == "rust":
         return _run_cargo_test(root, extra, timeout)
     else:
-        return (f"Could not detect test framework in: {root}\n"
-                "Supported: pytest, jest, vitest, go test, cargo test\n"
-                "Pass framework='pytest' (or other) explicitly.")
+        return (
+            f"Could not detect test framework in: {root}\n"
+            "Supported: pytest, jest, vitest, go test, cargo test\n"
+            "Pass framework='pytest' (or other) explicitly."
+        )
 
 
 def _detect_test_framework(root: Path) -> str:
-    if (root / "Cargo.toml").exists():              return "rust"
-    if (root / "go.mod").exists():                  return "go"
+    if (root / "Cargo.toml").exists():
+        return "rust"
+    if (root / "go.mod").exists():
+        return "go"
     if (root / "package.json").exists():
         try:
-            pkg = __import__("json").loads((root/"package.json").read_text())
+            pkg = __import__("json").loads((root / "package.json").read_text())
             scripts = pkg.get("scripts", {})
-            if "vitest" in str(scripts): return "vitest"
-        except Exception: pass
+            if "vitest" in str(scripts):
+                return "vitest"
+        except Exception:
+            pass
         return "jest"
     # Python - prefer pytest
     for pat in ("pytest.ini", "pyproject.toml", "setup.cfg"):
-        if (root / pat).exists(): return "pytest"
+        if (root / pat).exists():
+            return "pytest"
     if list(root.rglob("test_*.py")) or list(root.rglob("*_test.py")):
         return "pytest"
     return "pytest"  # best default
 
 
 def _run_pytest(root: Path, extra: list, timeout: int) -> str:
-    cmd = _resolve_python_command() + ["-m", "pytest", "--tb=short", "-v", "--no-header"] + extra + [str(root)]
+    cmd = (
+        _resolve_python_command()
+        + ["-m", "pytest", "--tb=short", "-v", "--no-header"]
+        + extra
+        + [str(root)]
+    )
     rc, out, err, elapsed = _run_proc(cmd, timeout=timeout)
     combined = out + ("\n" + err if err.strip() else "")
 
@@ -405,10 +430,10 @@ def _run_pytest(root: Path, extra: list, timeout: int) -> str:
         return f"OK Tests passed  [{elapsed:.1f}s]  ({n} passing)"
 
     # Parse failures for clear summary
-    lines     = combined.splitlines()
-    failures  = _parse_pytest_failures(lines)
-    summary   = re.search(r"=+ ([\d\w ,]+) =+\s*$", combined, re.MULTILINE)
-    sum_line  = summary.group(1).strip() if summary else "tests failed"
+    lines = combined.splitlines()
+    failures = _parse_pytest_failures(lines)
+    summary = re.search(r"=+ ([\d\w ,]+) =+\s*$", combined, re.MULTILINE)
+    sum_line = summary.group(1).strip() if summary else "tests failed"
 
     result = [f"FAIL {sum_line}  [{elapsed:.1f}s]", ""]
 
@@ -431,8 +456,8 @@ def _run_pytest(root: Path, extra: list, timeout: int) -> str:
 def _parse_pytest_failures(lines: list[str]) -> list[str]:
     """Extract individual test failure blocks from pytest --tb=short output."""
     failures = []
-    current  = []
-    in_fail  = False
+    current = []
+    in_fail = False
 
     for line in lines:
         if re.match(r"_{5,} .+ _{5,}", line) or re.match(r"FAILED .+", line):
@@ -444,8 +469,8 @@ def _parse_pytest_failures(lines: list[str]) -> list[str]:
             if re.match(r"={5,}", line):
                 if current:
                     failures.append("\n".join(current))
-                current  = []
-                in_fail  = False
+                current = []
+                in_fail = False
             else:
                 current.append(line)
 
@@ -497,8 +522,10 @@ def _run_cargo_test(root: Path, extra: list, timeout: int) -> str:
     failed = re.findall(r"^test .+ \.\.\. FAILED", combined, re.MULTILINE)
     result = [f"FAIL Cargo tests failed  [exit {rc}  {elapsed:.1f}s]"]
     if failed:
-        result.append(f"\nFailed ({len(failed)}): " + ", ".join(
-            re.sub(r"^test | \.\.\. FAILED$", "", f) for f in failed[:15]))
+        result.append(
+            f"\nFailed ({len(failed)}): "
+            + ", ".join(re.sub(r"^test | \.\.\. FAILED$", "", f) for f in failed[:15])
+        )
     if len(combined) > 3000:
         combined = combined[:1500] + "\n...\n" + combined[-800:]
     result.append(f"\n{combined}")
@@ -507,8 +534,8 @@ def _run_cargo_test(root: Path, extra: list, timeout: int) -> str:
 
 # -- Tool: IterateFix ----------------------------------------------------------
 
-def iterate_fix(command: str, working_dir: str = ".",
-                max_tries: int = 5, timeout: int = 60) -> str:
+
+def iterate_fix(command: str, working_dir: str = ".", max_tries: int = 5, timeout: int = 60) -> str:
     """
     Run a shell command repeatedly until it succeeds or max_tries is exhausted.
 
@@ -541,20 +568,25 @@ def iterate_fix(command: str, working_dir: str = ".",
 
         if rc == 0:
             out = (stdout + stderr).strip()
-            return (f"OK Succeeded on attempt {attempt}/{max_tries}  [{elapsed:.2f}s]\n\n"
-                    + (out[:2000] if out else "(no output)"))
+            return f"OK Succeeded on attempt {attempt}/{max_tries}  [{elapsed:.2f}s]\n\n" + (
+                out[:2000] if out else "(no output)"
+            )
 
         # Failed - return error for Dan to act on
-        header = (f"FAIL Attempt {attempt}/{max_tries} failed  [exit {rc}  {elapsed:.2f}s]\n"
-                  f"Command: {command}\n")
-        out    = (stdout + "\n" + stderr).strip()
+        header = (
+            f"FAIL Attempt {attempt}/{max_tries} failed  [exit {rc}  {elapsed:.2f}s]\n"
+            f"Command: {command}\n"
+        )
+        out = (stdout + "\n" + stderr).strip()
         if len(out) > 3000:
             out = out[:1500] + "\n...(truncated)...\n" + out[-800:]
 
         if attempt < max_tries:
-            footer = (f"\n\n-----------------------------------------\n"
-                      f"Fix the issue above, then call IterateFix again "
-                      f"({max_tries - attempt} attempt(s) remaining).")
+            footer = (
+                f"\n\n-----------------------------------------\n"
+                f"Fix the issue above, then call IterateFix again "
+                f"({max_tries - attempt} attempt(s) remaining)."
+            )
         else:
             footer = f"\n\nFAIL Max tries ({max_tries}) reached. Could not auto-fix."
 
@@ -568,6 +600,7 @@ def iterate_fix(command: str, working_dir: str = ".",
 
 # -- Registration --------------------------------------------------------------
 
+
 def register_execution_tools() -> None:
 
     registry.register(
@@ -579,10 +612,14 @@ def register_execution_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "code":     {"type": "string",  "description": "Source code to execute"},
-                "language": {"type": "string",  "description": "Language name (e.g. 'python', 'javascript')", "default": "python"},
-                "stdin":    {"type": "string",  "description": "Optional stdin input", "default": ""},
-                "timeout":  {"type": "integer", "description": "Max seconds to run", "default": 30},
+                "code": {"type": "string", "description": "Source code to execute"},
+                "language": {
+                    "type": "string",
+                    "description": "Language name (e.g. 'python', 'javascript')",
+                    "default": "python",
+                },
+                "stdin": {"type": "string", "description": "Optional stdin input", "default": ""},
+                "timeout": {"type": "integer", "description": "Max seconds to run", "default": 30},
             },
             "required": ["code"],
         },
@@ -599,9 +636,9 @@ def register_execution_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "path":    {"type": "string",  "description": "Path to the source file"},
-                "args":    {"type": "string",  "description": "Command-line arguments", "default": ""},
-                "stdin":   {"type": "string",  "description": "Optional stdin input", "default": ""},
+                "path": {"type": "string", "description": "Path to the source file"},
+                "args": {"type": "string", "description": "Command-line arguments", "default": ""},
+                "stdin": {"type": "string", "description": "Optional stdin input", "default": ""},
                 "timeout": {"type": "integer", "description": "Max seconds to run", "default": 30},
             },
             "required": ["path"],
@@ -620,10 +657,22 @@ def register_execution_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "path":      {"type": "string", "description": "Project or test directory", "default": "."},
-                "framework": {"type": "string", "description": "Test framework (auto-detected if omitted)", "default": ""},
-                "args":      {"type": "string", "description": "Extra args passed to the test runner", "default": ""},
-                "timeout":   {"type": "integer","description": "Max seconds to run", "default": 120},
+                "path": {
+                    "type": "string",
+                    "description": "Project or test directory",
+                    "default": ".",
+                },
+                "framework": {
+                    "type": "string",
+                    "description": "Test framework (auto-detected if omitted)",
+                    "default": "",
+                },
+                "args": {
+                    "type": "string",
+                    "description": "Extra args passed to the test runner",
+                    "default": "",
+                },
+                "timeout": {"type": "integer", "description": "Max seconds to run", "default": 120},
             },
         },
         handler=test_loop,
@@ -640,10 +689,17 @@ def register_execution_tools() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "command":     {"type": "string",  "description": "Shell command to run (e.g. 'python main.py')"},
-                "working_dir": {"type": "string",  "description": "Working directory", "default": "."},
-                "max_tries":   {"type": "integer", "description": "Max fix attempts", "default": 5},
-                "timeout":     {"type": "integer", "description": "Seconds per attempt", "default": 60},
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to run (e.g. 'python main.py')",
+                },
+                "working_dir": {
+                    "type": "string",
+                    "description": "Working directory",
+                    "default": ".",
+                },
+                "max_tries": {"type": "integer", "description": "Max fix attempts", "default": 5},
+                "timeout": {"type": "integer", "description": "Seconds per attempt", "default": 60},
             },
             "required": ["command"],
         },
