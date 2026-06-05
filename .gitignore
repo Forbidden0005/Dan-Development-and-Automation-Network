@@ -34,7 +34,7 @@ bootstrap_admin_key.txt
 *.log
 
 # Local Dan state
-Dan/
+/Dan/
 .dan/
 .claude/
 
