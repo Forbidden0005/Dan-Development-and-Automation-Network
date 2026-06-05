@@ -5,7 +5,6 @@ Provides comprehensive ML model training, inference, and management capabilities
 
 import os
 import json
-import pickle
 import logging
 import warnings
 from datetime import datetime
@@ -283,15 +282,19 @@ class ModelStorage:
         self.models_dir = Path(models_dir)
         self.models_dir.mkdir(exist_ok=True)
 
+    def _normalize_model_name(self, model_name: str) -> str:
+        model_name = sanitize_user_input(model_name, max_length=100)
+        if not model_name or not model_name.replace("_", "").replace("-", "").isalnum():
+            raise MLError(
+                "Invalid model name. Use alphanumeric characters, hyphens, and underscores only."
+            )
+        return model_name
+
     def save_model(self, model_data: Dict[str, Any], model_name: str) -> Dict[str, Any]:
         """Save a trained model to disk"""
         try:
-            # Validate model name
-            model_name = sanitize_user_input(model_name, max_length=100)
-            if not model_name or not model_name.replace("_", "").replace("-", "").isalnum():
-                raise MLError(
-                    "Invalid model name. Use alphanumeric characters, hyphens, and underscores only."
-                )
+            model_name = self._normalize_model_name(model_name)
+            import joblib
 
             model_path = self.models_dir / f"{model_name}.pkl"
             metadata_path = self.models_dir / f"{model_name}_metadata.json"
@@ -309,9 +312,7 @@ class ModelStorage:
                 "algorithm": model_data["algorithm"],
             }
 
-            # Save model
-            with open(model_path, "wb") as f:
-                pickle.dump(save_data, f)
+            joblib.dump(save_data, model_path)
 
             # Save metadata
             metadata = {
@@ -334,16 +335,20 @@ class ModelStorage:
                 "message": f'Model "{model_name}" saved successfully',
             }
 
+        except ImportError:
+            return {
+                "status": "error",
+                "error": "joblib is required to save ML models. Install requirements-ml.txt.",
+                "error_type": "ImportError",
+            }
         except Exception as e:
             return {"status": "error", "error": str(e), "error_type": type(e).__name__}
 
     def load_model(self, model_name: str) -> Dict[str, Any]:
         """Load a saved model from disk"""
         try:
-            # Validate and sanitize model name
-            model_name = sanitize_user_input(model_name, max_length=100)
-            if not model_name:
-                raise MLError("Invalid model name")
+            model_name = self._normalize_model_name(model_name)
+            import joblib
 
             model_path = self.models_dir / f"{model_name}.pkl"
             metadata_path = self.models_dir / f"{model_name}_metadata.json"
@@ -355,20 +360,8 @@ class ModelStorage:
             if not model_path.exists():
                 raise MLError(f'Model "{model_name}" not found')
 
-            # Load model (SECURITY FIX: Using joblib instead of pickle)
-            try:
-                import joblib
-
-                model_data = joblib.load(model_path)
-                logger.info(f"Loaded model using secure joblib: {model_name}")
-            except ImportError:
-                # Fallback to pickle with warning (should be avoided in production)
-                logger.warning(
-                    f"SECURITY WARNING: Loading model {model_name} with pickle (joblib not available)"
-                )
-                logger.warning("Install joblib for secure model loading: pip install joblib")
-                with open(model_path, "rb") as f:
-                    model_data = pickle.load(f)
+            model_data = joblib.load(model_path)
+            logger.info("Loaded model using joblib: %s", model_name)
 
             # Load metadata if available
             metadata = {}
@@ -383,6 +376,12 @@ class ModelStorage:
                 "message": f'Model "{model_name}" loaded successfully',
             }
 
+        except ImportError:
+            return {
+                "status": "error",
+                "error": "joblib is required to load ML models. Install requirements-ml.txt.",
+                "error_type": "ImportError",
+            }
         except Exception as e:
             return {"status": "error", "error": str(e), "error_type": type(e).__name__}
 

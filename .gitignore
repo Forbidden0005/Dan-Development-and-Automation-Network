@@ -45,6 +45,7 @@ bootstrap_admin_key.txt
 Thumbs.db
 
 # Generated media and temporary files
+/tmp/
 *.tmp
 *.temp
 *.bak

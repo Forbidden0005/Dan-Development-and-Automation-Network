@@ -2896,6 +2896,42 @@ class TestCodebaseIndexBundle:
         }.issubset(set(registered))
 
 
+class TestMlToolsStorage:
+    def test_load_model_rejects_path_traversal_names(self, tmp_path):
+        from ml_tools import ModelStorage
+
+        storage = ModelStorage(str(tmp_path / "models"))
+
+        result = storage.load_model("../outside")
+
+        assert result["status"] == "error"
+        assert "Invalid model name" in result["error"]
+
+    def test_load_model_requires_joblib_instead_of_pickle_fallback(self, monkeypatch, tmp_path):
+        import builtins
+        import pickle
+
+        from ml_tools import ModelStorage
+
+        storage = ModelStorage(str(tmp_path / "models"))
+        model_path = tmp_path / "models" / "demo.pkl"
+        model_path.write_bytes(pickle.dumps({"model_type": "classification"}))
+
+        original_import = builtins.__import__
+
+        def reject_joblib(name, *args, **kwargs):
+            if name == "joblib":
+                raise ImportError("joblib unavailable")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", reject_joblib)
+
+        result = storage.load_model("demo")
+
+        assert result["status"] == "error"
+        assert "joblib is required" in result["error"]
+
+
 class TestCodeToolsDependencyAudit:
     def test_check_deps_reports_undeclared_imports(self, tmp_path):
         import code_tools
