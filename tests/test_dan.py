@@ -1943,6 +1943,39 @@ class TestSecurityUtils:
         assert validator.is_safe_path(str(allowed / "file.txt"))
         assert not validator.is_safe_path(str(outside / "file.txt"))
 
+    def test_secure_command_executor_rejects_shell_metacharacters(self):
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+
+        with pytest.raises(ValueError, match="Shell features"):
+            executor.validate_command("echo hello && echo again")
+
+    def test_windows_builtin_runs_through_explicit_shell_without_shell_true(self, monkeypatch):
+        import security_utils
+
+        recorded = {}
+
+        class Result:
+            stdout = "hello\n"
+            stderr = ""
+            returncode = 0
+
+        def fake_run(args, **kwargs):
+            recorded["args"] = args
+            recorded["kwargs"] = kwargs
+            return Result()
+
+        monkeypatch.setattr("platform.system", lambda: "Windows")
+        monkeypatch.setattr(security_utils.subprocess, "run", fake_run)
+        monkeypatch.setenv("COMSPEC", "C:\\Windows\\System32\\cmd.exe")
+
+        result = security_utils.SecureCommandExecutor().execute_command("echo hello")
+
+        assert result == "hello"
+        assert recorded["args"][:4] == ["C:\\Windows\\System32\\cmd.exe", "/d", "/s", "/c"]
+        assert recorded["kwargs"].get("shell") is not True
+
 
 class TestAuthToolsBundle:
     def test_login_user_authenticates_without_existing_session(self, monkeypatch):

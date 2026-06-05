@@ -76,6 +76,8 @@ class SecurePathValidator:
 
 class SecureCommandExecutor:
     """Secure command execution with sandboxing and validation."""
+
+    SHELL_FEATURES = ('|', '>', '<', '&', ';', '`', '$', '(', ')', '[', ']')
     
     # Dangerous command patterns (expanded from original)
     DANGEROUS_PATTERNS = [
@@ -180,6 +182,12 @@ class SecureCommandExecutor:
         """
         if not command or not isinstance(command, str):
             raise ValueError("Command must be a non-empty string")
+
+        if any(feature in command for feature in self.SHELL_FEATURES):
+            raise ValueError(
+                "Shell features are not supported by SecureCommandExecutor; "
+                "pass a single command and arguments instead"
+            )
         
         # Check for dangerous patterns
         for pattern in self.compiled_patterns:
@@ -242,8 +250,7 @@ class SecureCommandExecutor:
             if self._is_simple_command(command):
                 if self._needs_windows_shell(command):
                     result = subprocess.run(
-                        command,
-                        shell=True,
+                        self._windows_shell_args(command),
                         capture_output=True,
                         text=True,
                         timeout=self.max_execution_time,
@@ -262,15 +269,9 @@ class SecureCommandExecutor:
                         env=self._get_restricted_env()
                     )
             else:
-                # For complex commands, use shell=True but with restrictions
-                result = subprocess.run(
-                    command,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.max_execution_time,
-                    cwd=cwd,
-                    env=self._get_restricted_env()
+                raise ValueError(
+                    "Shell features are not supported by SecureCommandExecutor; "
+                    "pass a single command and arguments instead"
                 )
             
             output = ""
@@ -294,8 +295,7 @@ class SecureCommandExecutor:
     def _is_simple_command(self, command: str) -> bool:
         """Check if command is simple enough to avoid shell=True."""
         # Avoid shell=True for commands without shell features
-        shell_features = ['|', '>', '<', '&', ';', '`', '$', '(', ')', '[', ']']
-        return not any(feature in command for feature in shell_features)
+        return not any(feature in command for feature in self.SHELL_FEATURES)
 
     def _split_command(self, command: str) -> list[str]:
         """Split a simple command using platform-safe defaults."""
@@ -320,6 +320,11 @@ class SecureCommandExecutor:
             platform.system() == "Windows"
             and self._base_command(command) in self.WINDOWS_SHELL_BUILTINS
         )
+
+    def _windows_shell_args(self, command: str) -> list[str]:
+        """Build an explicit cmd.exe invocation without subprocess shell=True."""
+        comspec = os.environ.get('COMSPEC', r'C:\Windows\system32\cmd.exe')
+        return [comspec, '/d', '/s', '/c', command]
     
     def _get_restricted_env(self) -> dict:
         """Get a restricted environment for command execution."""

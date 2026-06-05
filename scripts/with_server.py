@@ -19,6 +19,22 @@ import socket
 import time
 import sys
 import argparse
+import os
+import platform
+import shlex
+
+SHELL_FEATURES = ("|", ">", "<", "&", ";")
+
+
+def _server_command_args(command):
+    """Return argv for a server command without using subprocess shell=True."""
+    if any(feature in command for feature in SHELL_FEATURES):
+        if platform.system() == "Windows":
+            shell = os.environ.get("COMSPEC", r"C:\Windows\system32\cmd.exe")
+            return [shell, "/d", "/s", "/c", command]
+        shell = os.environ.get("SHELL", "/bin/sh")
+        return [shell, "-c", command]
+    return shlex.split(command, posix=platform.system() != "Windows")
 
 def is_server_ready(port, timeout=30):
     """Wait for server to be ready by polling the port."""
@@ -65,10 +81,8 @@ def main():
         for i, server in enumerate(servers):
             print(f"Starting server {i+1}/{len(servers)}: {server['cmd']}")
 
-            # Use shell=True to support commands with cd and &&
             process = subprocess.Popen(
-                server['cmd'],
-                shell=True,
+                _server_command_args(server['cmd']),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
