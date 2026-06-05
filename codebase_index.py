@@ -747,7 +747,7 @@ def _vector_search(db: sqlite3.Connection, query: str, top_k: int) -> list[tuple
         try:
             vec = json.loads(r["vector_json"])
             sim = _cosine(q_vec, vec)
-            scored.append((sim, r["symbol_id"]))
+            scored.append((sim, int(r["symbol_id"])))
         except Exception:
             continue
 
@@ -757,18 +757,19 @@ def _vector_search(db: sqlite3.Connection, query: str, top_k: int) -> list[tuple
     if not top_ids:
         return []
 
-    placeholders = ",".join("?" * len(top_ids))
-    rows2 = db.execute(
-        f"""
-        SELECT s.name, s.kind, s.line, s.signature, s.docstring,
-               f.rel_path, s.parent_class, s.id
-        FROM symbols s JOIN files f ON s.file_id = f.id
-        WHERE s.id IN ({placeholders})
-    """,
-        top_ids,
-    ).fetchall()
-
-    id_to_row = {r["id"]: r for r in rows2}
+    id_to_row = {}
+    for symbol_id in top_ids:
+        row = db.execute(
+            """
+            SELECT s.name, s.kind, s.line, s.signature, s.docstring,
+                   f.rel_path, s.parent_class, s.id
+            FROM symbols s JOIN files f ON s.file_id = f.id
+            WHERE s.id = ?
+            """,
+            (symbol_id,),
+        ).fetchone()
+        if row is not None:
+            id_to_row[symbol_id] = row
     results = []
     for sim, sid in scored[:top_k]:
         if sid in id_to_row:
