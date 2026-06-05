@@ -78,6 +78,7 @@ class AnthropicProvider:
             kwargs["tools"] = tools
 
         est = sum(len(str(m.content)) for m in messages) // 4
+        est += len(str(system)) // 4 if system else 0
         api_key, key_idx = self.rotator.next(estimated_tokens=est)
         client = self._anthropic.Anthropic(api_key=api_key)
 

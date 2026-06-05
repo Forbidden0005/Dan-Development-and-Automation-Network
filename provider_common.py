@@ -1,8 +1,23 @@
 import logging
+import json
 import os
 import time
 
 logger = logging.getLogger(__name__)
+
+
+def parse_tool_arguments(raw_arguments) -> dict:
+    """Parse provider tool arguments defensively; malformed input becomes empty args."""
+    if isinstance(raw_arguments, dict):
+        return raw_arguments
+    if raw_arguments in (None, ""):
+        return {}
+    try:
+        parsed = json.loads(raw_arguments)
+    except (TypeError, json.JSONDecodeError):
+        logger.warning("Provider returned malformed tool-call arguments; using empty input")
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 class KeyRotator:

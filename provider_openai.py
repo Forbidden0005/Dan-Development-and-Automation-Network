@@ -1,6 +1,4 @@
-import json
-
-from provider_common import KeyRotator
+from provider_common import KeyRotator, parse_tool_arguments
 from provider_types import Message, Response, ToolCall
 
 
@@ -67,7 +65,7 @@ class OpenAIProvider:
                 resp.tool_calls.append(ToolCall(
                     id=tc.id,
                     name=tc.function.name,
-                    input=json.loads(tc.function.arguments),
+                    input=parse_tool_arguments(tc.function.arguments),
                 ))
         return resp
 

@@ -6,6 +6,7 @@ import re
 from html.parser import HTMLParser
 
 import tool_registry as registry
+from security_utils import validate_fetch_url
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,13 @@ def _extract_text(html: str, max_chars: int = 15000) -> str:
     return text
 
 
-def web_fetch(url: str, max_chars: int = 15000) -> str:
+def web_fetch(url: str, max_chars: int = 15000, allow_local: bool = False) -> str:
     """Fetch a web page and extract text."""
+    try:
+        url = validate_fetch_url(url, allow_local=allow_local)
+    except ValueError as e:
+        return f"Security error: {e}"
+
     try:
         import httpx
     except ImportError:
@@ -105,6 +111,7 @@ def register_web_tools() -> None:
             "properties": {
                 "url": {"type": "string", "description": "URL to fetch"},
                 "max_chars": {"type": "integer", "description": "Max chars to return", "default": 15000},
+                "allow_local": {"type": "boolean", "description": "Allow loopback/private-network URLs", "default": False},
             },
             "required": ["url"],
         },

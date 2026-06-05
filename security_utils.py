@@ -2,12 +2,14 @@
 
 import logging
 import os
+import ipaddress
 import re
 import shlex
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Set
 import subprocess
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -440,3 +442,41 @@ def validate_file_size(file_path: Path, max_size_mb: int = 50) -> None:
     
     if size_mb > max_size_mb:
         raise ValueError(f"File too large: {size_mb:.2f}MB > {max_size_mb}MB")
+
+
+def validate_fetch_url(url: str, allow_local: bool = False) -> str:
+    """Validate an HTTP(S) URL before agent-controlled network fetches."""
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("URL must be a non-empty string")
+
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("unsupported URL scheme; only http and https are allowed")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL must include a hostname")
+
+    if allow_local:
+        return url.strip()
+
+    host = hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        raise ValueError("local network address blocked; pass allow_local=True to permit it")
+
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return url.strip()
+
+    if (
+        address.is_loopback
+        or address.is_link_local
+        or address.is_private
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    ):
+        raise ValueError("local network address blocked; pass allow_local=True to permit it")
+
+    return url.strip()

@@ -15,6 +15,17 @@ def _dir() -> Path:
     return SESSIONS_DIR
 
 
+def _safe_session_stem(name: str) -> str:
+    stem = name.strip()
+    if not stem:
+        return ""
+    if Path(stem).name != stem or any(sep in stem for sep in ("/", "\\")):
+        return ""
+    if stem.endswith(".json"):
+        stem = stem[:-5]
+    return "".join(c for c in stem if c.isalnum() or c in "_-.")[:80]
+
+
 # ── Save ──────────────────────────────────────────────────────────────────────
 
 def save(messages: list[dict], provider: str, model: str,
@@ -81,16 +92,25 @@ def load(name: str) -> tuple[list[dict], dict] | None:
     Returns *(messages, metadata_dict)* on success, *None* if not found.
     Checks for exact filename match (with and without .json extension).
     """
-    d = _dir()
+    d = _dir().resolve()
+    stem = _safe_session_stem(name)
+    if not stem:
+        return None
+
     candidates = [
-        d / name,
-        d / f"{name}.json",
-        d / f"_auto_{name}.json",
+        d / f"{stem}.json",
+        d / f"_auto_{stem}.json",
     ]
     for fp in candidates:
-        if fp.exists():
+        try:
+            resolved = fp.resolve()
+            resolved.relative_to(d)
+        except ValueError:
+            continue
+
+        if resolved.exists():
             try:
-                data = json.loads(fp.read_text(encoding="utf-8"))
+                data = json.loads(resolved.read_text(encoding="utf-8"))
                 return data.get("messages", []), data
             except Exception:
                 continue

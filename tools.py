@@ -14,6 +14,7 @@ from security_utils import (
     SecurePathValidator, 
     SecureCommandExecutor, 
     sanitize_user_input,
+    validate_fetch_url,
     validate_file_size
 )
 
@@ -404,15 +405,24 @@ def http_request(
     body: str = "",
     timeout: int = 30,
     json_mode: bool = False,
+    allow_local: bool = False,
 ) -> str:
     """Make an HTTP request and return the response."""
+    try:
+        method  = method.upper()
+        if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}:
+            return f"Security error: unsupported HTTP method: {method}"
+
+        url = validate_fetch_url(url, allow_local=allow_local)
+    except ValueError as e:
+        return f"Security error: {e}"
+
     try:
         import httpx
     except ImportError:
         return "Error: pip install httpx"
 
     try:
-        method  = method.upper()
         headers = headers or {}
         if "User-Agent" not in headers:
             headers["User-Agent"] = "Dan/2.5 (Development Automation Network)"
@@ -423,8 +433,8 @@ def http_request(
         if body:
             kwargs["content"] = body.encode()
 
-        with httpx.Client() as client:
-            r = getattr(client, method.lower())(**kwargs)
+        with httpx.Client(max_redirects=5) as client:
+            r = client.request(method, **kwargs)
 
         ct = r.headers.get("content-type", "")
         lines = [
@@ -447,6 +457,8 @@ def http_request(
 
         return "\n".join(lines)
 
+    except ValueError as e:
+        return f"Security error: {e}"
     except Exception as e:
         return f"Error making {method} request to {url}: {e}"
 
@@ -623,6 +635,9 @@ def register_core_tools() -> None:
                 "json_mode": {"type": "boolean",
                               "description": "Parse response as JSON and pretty-print",
                               "default": False},
+                "allow_local": {"type": "boolean",
+                                "description": "Allow loopback/private-network URLs",
+                                "default": False},
             },
             "required": ["url"],
         },

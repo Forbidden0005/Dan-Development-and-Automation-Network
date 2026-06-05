@@ -658,6 +658,16 @@ class TestSessionManager:
         assert loaded[0] == messages
         assert loaded[1]["provider"] == "ollama"
 
+    def test_load_rejects_path_traversal(self, monkeypatch, tmp_path):
+        import session_mgr
+
+        outside = tmp_path / "outside.json"
+        outside.write_text('{"messages": [{"role": "user", "content": "outside"}]}', encoding="utf-8")
+        monkeypatch.setattr(session_mgr, "SESSIONS_DIR", tmp_path / "sessions")
+
+        assert session_mgr.load("../outside") is None
+        assert session_mgr.load(str(outside)) is None
+
     def test_auto_save_skips_empty_messages(self, monkeypatch, tmp_path):
         import session_mgr
 
@@ -792,6 +802,13 @@ class TestWebTools:
         monkeypatch.setitem(sys.modules, "httpx", type("Httpx", (), {"Client": lambda *args, **kwargs: FakeClient(binary_response)}))
         assert "Binary content" in web.web_fetch("https://example.com/file")
 
+    def test_web_fetch_rejects_local_and_non_http_urls(self):
+        import web
+
+        assert "unsupported URL scheme" in web.web_fetch("file:///etc/passwd")
+        assert "local network address" in web.web_fetch("http://127.0.0.1:8000/admin")
+        assert "local network address" in web.web_fetch("http://localhost:8000/admin")
+
     def test_register_web_tools_registers_expected_names(self, monkeypatch):
         import web
 
@@ -856,6 +873,12 @@ class TestSecurityUtilsMore:
         executor = SecureCommandExecutor()
 
         executor.validate_command('py -c "print(123)"')
+
+    def test_http_request_rejects_bad_method_and_local_url(self):
+        import tools
+
+        assert "unsupported HTTP method" in tools.http_request("https://example.com", method="trace")
+        assert "local network address" in tools.http_request("http://127.0.0.1:8000", method="GET")
 
 
 class TestCoreToolsMore:
@@ -974,6 +997,46 @@ class TestProviderModules:
         assert response.usage == {"input": 11, "output": 7}
         assert provider.context_limit == 128_000
 
+    def test_openai_provider_handles_malformed_tool_arguments(self, monkeypatch):
+        import provider_openai
+        from providers import Message
+
+        class FakeRotator:
+            count = 1
+
+            def next(self, estimated_tokens=0):
+                return ("key-1", 0)
+
+            def record_usage(self, key_idx, total):
+                return None
+
+        class FakeCompletion:
+            def create(self, **kwargs):
+                tool_call = type(
+                    "ToolCallObj",
+                    (),
+                    {"id": "call-1", "function": type("Fn", (), {"name": "Read", "arguments": "{"})()},
+                )()
+                message = type("Msg", (), {"content": "", "tool_calls": [tool_call]})()
+                choice = type("Choice", (), {"message": message, "finish_reason": "tool_calls"})()
+                usage = type("Usage", (), {"prompt_tokens": 1, "completion_tokens": 1})()
+                return type("Result", (), {"choices": [choice], "usage": usage})()
+
+        fake_client = type(
+            "Client",
+            (),
+            {"chat": type("Chat", (), {"completions": FakeCompletion()})()},
+        )()
+        fake_openai = type("OpenAIStub", (), {"OpenAI": lambda api_key=None: fake_client})
+
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+        monkeypatch.setattr(provider_openai, "KeyRotator", lambda prefix: FakeRotator())
+
+        provider = provider_openai.OpenAIProvider("gpt-4o")
+        response = provider.chat([Message(role="user", content="hello")])
+
+        assert response.tool_calls[0].input == {}
+
     def test_anthropic_provider_chat_and_stream_fallback(self, monkeypatch):
         import provider_anthropic
         from providers import Message
@@ -1069,6 +1132,64 @@ class TestProviderModules:
         assert stream_response.tool_calls[0].name == "Read"
         assert provider.supports_streaming
 
+    def test_anthropic_stream_estimates_system_tokens(self, monkeypatch):
+        import provider_anthropic
+        from providers import Message
+
+        estimates = []
+
+        class FakeRotator:
+            count = 1
+
+            def next(self, estimated_tokens=0):
+                estimates.append(estimated_tokens)
+                return ("key-1", 0)
+
+            def record_usage(self, key_idx, total):
+                return None
+
+        final_message = type(
+            "Final",
+            (),
+            {
+                "stop_reason": "end_turn",
+                "usage": type("Usage", (), {"input_tokens": 1, "output_tokens": 1})(),
+                "content": [],
+            },
+        )()
+
+        class StreamContext:
+            def __enter__(self):
+                self.text_stream = iter(["ok"])
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def get_final_message(self):
+                return final_message
+
+        class MessagesAPI:
+            def stream(self, **kwargs):
+                return StreamContext()
+
+        fake_anthropic = type(
+            "AnthropicStub",
+            (),
+            {
+                "Anthropic": lambda api_key=None: type("Client", (), {"messages": MessagesAPI()})(),
+                "RateLimitError": RuntimeError,
+            },
+        )
+
+        monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic)
+        monkeypatch.setattr(provider_anthropic, "KeyRotator", lambda prefix: FakeRotator())
+
+        provider = provider_anthropic.AnthropicProvider("claude-sonnet-4-6")
+        provider.chat_stream([Message(role="user", content="abcd")], system="x" * 40)
+
+        assert estimates[-1] == 11
+
     def test_ollama_provider_converters_and_fallback(self, monkeypatch):
         import provider_ollama
         from providers import Message
@@ -1137,6 +1258,37 @@ class TestProviderModules:
         monkeypatch.setattr("api_config.get_secret", lambda key: "")
         with pytest.raises(ValueError, match="No Venice API key found"):
             provider_venice.VeniceProvider("llama-3.3-70b")
+
+    def test_venice_provider_handles_malformed_tool_arguments(self, monkeypatch):
+        import provider_venice
+        from providers import Message
+
+        class FakeCompletion:
+            def create(self, **kwargs):
+                tool_call = type(
+                    "ToolCallObj",
+                    (),
+                    {"id": "call-1", "function": type("Fn", (), {"name": "Read", "arguments": "["})()},
+                )()
+                message = type("Msg", (), {"content": "", "tool_calls": [tool_call]})()
+                choice = type("Choice", (), {"message": message, "finish_reason": "tool_calls"})()
+                usage = type("Usage", (), {"prompt_tokens": 1, "completion_tokens": 1})()
+                return type("Result", (), {"choices": [choice], "usage": usage})()
+
+        fake_client = type(
+            "Client",
+            (),
+            {"chat": type("Chat", (), {"completions": FakeCompletion()})()},
+        )()
+        fake_openai = type("OpenAIStub", (), {"OpenAI": lambda **kwargs: fake_client})
+
+        monkeypatch.setitem(sys.modules, "openai", fake_openai)
+        monkeypatch.setenv("VENICE_API_KEY", "venice-key")
+
+        provider = provider_venice.VeniceProvider("zai-org-glm-4.7")
+        response = provider.chat([Message(role="user", content="hello")])
+
+        assert response.tool_calls[0].input == {}
 
 
 class TestContextAndRegistry:
