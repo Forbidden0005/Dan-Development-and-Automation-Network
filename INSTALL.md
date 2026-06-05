@@ -35,13 +35,13 @@ Choose ONE of the following providers:
 #### Option A: Anthropic (Claude) - RECOMMENDED
 ```bash
 # Linux/macOS
-export ANTHROPIC_API_KEY="sk-ant-..."
+export ANTHROPIC_API_KEY="<anthropic-api-key>"
 
 # Windows Command Prompt
-set ANTHROPIC_API_KEY=sk-ant-...
+set ANTHROPIC_API_KEY=<anthropic-api-key>
 
 # Windows PowerShell
-$env:ANTHROPIC_API_KEY="sk-ant-..."
+$env:ANTHROPIC_API_KEY="<anthropic-api-key>"
 ```
 
 Get your key at: https://console.anthropic.com/
@@ -49,13 +49,13 @@ Get your key at: https://console.anthropic.com/
 #### Option B: OpenAI (GPT)
 ```bash
 # Linux/macOS
-export OPENAI_API_KEY="sk-..."
+export OPENAI_API_KEY="<openai-api-key>"
 
 # Windows Command Prompt
-set OPENAI_API_KEY=sk-...
+set OPENAI_API_KEY=<openai-api-key>
 
 # Windows PowerShell
-$env:OPENAI_API_KEY="sk-..."
+$env:OPENAI_API_KEY="<openai-api-key>"
 ```
 
 Get your key at: https://platform.openai.com/

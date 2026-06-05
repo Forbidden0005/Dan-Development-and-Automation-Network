@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 CONFIG_FILE = USER_DATA_DIR / "api_config.json"
 SECRET_KEY_ENV_MAP = {
-    "anthropic.api_key": "ANTHROPIC_API_KEY",
-    "openai.api_key": "OPENAI_API_KEY",
-    "venice.api_key": "VENICE_API_KEY",
+    "anthropic.api_key": "ANTHROPIC_API_KEY",  # pragma: allowlist secret
+    "openai.api_key": "OPENAI_API_KEY",  # pragma: allowlist secret
+    "venice.api_key": "VENICE_API_KEY",  # pragma: allowlist secret
 }
 
 DEFAULT_CONFIG = {

@@ -26,8 +26,11 @@ def test_authentication_system():
         with timer("Get auth manager"):
             auth = get_auth_manager()
         
-        # Test with your new admin account
-        admin_key = "p9YjFzLdSYN3xetG8VTn_IeYHeoglfzF4nlN-TEGcsM"
+        admin_key = os.environ.get("DAN_VERIFICATION_API_KEY", "").strip()
+        if not admin_key:
+            print("  SKIP: Set DAN_VERIFICATION_API_KEY to run authentication check")
+            print(f"  Total users: {len(auth.users)}")
+            return
         
         with timer("Authentication check"):
             session = auth.authenticate(admin_key)
@@ -82,7 +85,7 @@ def test_provider_optimizations():
             from providers import KeyRotator
         
         # Test with dummy keys
-        os.environ['TEST_API_KEY'] = 'test_key'
+        os.environ['TEST_API_KEY'] = 'test_key'  # pragma: allowlist secret
         
         with timer("KeyRotator init"):
             rotator = KeyRotator('TEST_API_KEY')

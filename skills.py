@@ -43,7 +43,7 @@ def find_duplicates(path: str = ".", min_size: int = 1024) -> str:
         if files_scanned > 10_000:
             break
         try:
-            h = hashlib.md5(fp.read_bytes()).hexdigest()
+            h = hashlib.md5(fp.read_bytes(), usedforsecurity=False).hexdigest()
             hash_map[h].append(str(fp.relative_to(root)))
         except (PermissionError, OSError):
             continue

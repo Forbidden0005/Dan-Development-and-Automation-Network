@@ -73,7 +73,7 @@ class FileDep:
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def _db_path(project_root: str) -> Path:
-    h = hashlib.md5(project_root.encode()).hexdigest()[:12]
+    h = hashlib.md5(project_root.encode(), usedforsecurity=False).hexdigest()[:12]
     name = Path(project_root).name
     return INDEX_DIR / f"{name}_{h}.db"
 
@@ -321,7 +321,7 @@ def _extract_symbols(content: str, ext: str
 
 
 def _file_hash(path: Path) -> str:
-    h = hashlib.md5()
+    h = hashlib.md5(usedforsecurity=False)
     h.update(path.read_bytes()[:65536])   # hash first 64 KB
     return h.hexdigest()
 

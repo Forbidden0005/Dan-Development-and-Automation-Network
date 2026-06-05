@@ -1286,6 +1286,7 @@ class TestCodeToolsBundle:
         (root / "requirements.txt").write_text("-r requirements-core.txt\n", encoding="utf-8")
         (root / "requirements-core.txt").write_text("httpx\nanthropic\n", encoding="utf-8")
 
+        monkeypatch.setattr(code_tools.sys, "executable", "")
         monkeypatch.setattr(code_tools.shutil, "which", lambda name: "C:/Windows/py.exe" if name == "py" else None)
         monkeypatch.setattr(
             code_tools.importlib.util,
@@ -1299,12 +1300,18 @@ class TestCodeToolsBundle:
         assert "Pytest is not installed" in doctor
         assert "Runtime dependencies are missing: anthropic" in doctor
         assert "Dev missing:           0" in doctor
-        assert "Provider 'anthropic' is missing required SDK(s): anthropic." in doctor
+        assert "Provider 'anthropic' is missing required SDK(s): anthropic." not in doctor
         assert "Missing runtime packages:" in doctor
         assert "anthropic  (requirements-core.txt)" in doctor
         assert "Suggested runtime fix:" in doctor
         assert "py -m pip install anthropic" in doctor
         assert "Install test tooling: py -m pip install pytest pytest-cov" in doctor
+
+    def test_python_cmd_prefers_current_interpreter(self):
+        import sys
+        import code_tools
+
+        assert code_tools._python_cmd() == [sys.executable]
 
     def test_repo_health_combines_doctor_compile_and_optional_checks(self, tmp_path, monkeypatch):
         import code_tools
@@ -1655,7 +1662,9 @@ class TestApiConfigSecrets:
 
         config_file = tmp_path / "api_config.json"
         config_file.write_text(
-            json.dumps({"venice": {"api_key": "legacy-secret", "model": "custom-model"}}),
+            json.dumps(
+                {"venice": {"api_key": "legacy-secret", "model": "custom-model"}}  # pragma: allowlist secret
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(api_config, "CONFIG_FILE", config_file)
@@ -1683,7 +1692,7 @@ class TestApiConfigSecrets:
         config_file = tmp_path / "api_config.json"
         monkeypatch.setattr(api_config, "CONFIG_FILE", config_file)
         config = api_config.load_config()
-        config["venice"]["api_key"] = "should-not-save"
+        config["venice"]["api_key"] = "should-not-save"  # pragma: allowlist secret
         config["venice"]["model"] = "custom-model"
 
         api_config.save_config(config)

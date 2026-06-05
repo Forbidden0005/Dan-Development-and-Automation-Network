@@ -104,7 +104,9 @@ def _run(cmd: list[str], cwd: str | None = None,
 
 
 def _python_cmd() -> list[str]:
-    """Resolve the local Python command without assuming `python` is on PATH."""
+    """Resolve the current Python command without assuming `python` is on PATH."""
+    if sys.executable:
+        return [sys.executable]
     for candidate in _PYTHON_CANDIDATES:
         if shutil.which(candidate):
             return [candidate]
