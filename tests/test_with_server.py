@@ -19,6 +19,14 @@ def test_server_command_without_shell_features_uses_argv():
     assert args == ["python", "-m", "http.server"]
 
 
+def test_server_command_without_shell_features_handles_quoted_args():
+    with_server = _load_with_server()
+
+    args = with_server._server_command_args('python "server app.py"')
+
+    assert args == ["python", "server app.py"]
+
+
 def test_server_command_with_shell_features_uses_explicit_shell(monkeypatch):
     with_server = _load_with_server()
 

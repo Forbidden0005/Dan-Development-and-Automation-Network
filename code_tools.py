@@ -113,6 +113,11 @@ def _python_cmd() -> list[str]:
     return ["python"]
 
 
+def _python_module_cmd(module_name: str, *args: str) -> list[str]:
+    """Build a command that runs an installed Python module in this interpreter."""
+    return _python_cmd() + ["-m", module_name, *args]
+
+
 def _bounded_timeout(timeout: int, default: int = 120) -> int:
     try:
         value = int(timeout)
@@ -848,7 +853,8 @@ def run_tests(path: str = ".", framework: str = "", args: str = "",
     extra = args.split() if args else []
 
     if framework in ("pytest", "py"):
-        cmd = _python_cmd() + ["-m", "pytest", "--tb=short", "-q"] + extra + [str(path)]
+        test_target = root / "tests" if root.is_dir() and (root / "tests").exists() else root
+        cmd = _python_cmd() + ["-m", "pytest", "--tb=short", "-q"] + extra + [str(test_target)]
         code, out, err = _run(cmd, timeout=timeout)
         output = out + (("\n" + err) if err.strip() else "")
 
@@ -904,7 +910,10 @@ def lint_check(path: str = ".", tool: str = "", fix: bool = False) -> str:
         if (root / "pyproject.toml").exists() or list(root.rglob("*.py")):
             # Prefer ruff > flake8 > pylint for Python
             for candidate in ["ruff", "flake8", "pylint"]:
-                code, _, _ = _run([candidate, "--version"])
+                if importlib.util.find_spec(candidate) is not None:
+                    code, _, _ = _run(_python_module_cmd(candidate, "--version"))
+                else:
+                    code, _, _ = _run([candidate, "--version"])
                 if code == 0:
                     tool = candidate
                     break
@@ -921,13 +930,17 @@ def lint_check(path: str = ".", tool: str = "", fix: bool = False) -> str:
         return ("No linter found. Install one: pip install ruff  OR  pip install flake8")
 
     if tool == "ruff":
-        args = ["ruff", "check"]
+        args = (
+            _python_module_cmd("ruff", "check")
+            if importlib.util.find_spec("ruff") is not None
+            else ["ruff", "check"]
+        )
         if fix:
             args.append("--fix")
         args.append(str(path))
         code, out, err = _run(args)
         output = out + (("\n" + err) if err.strip() else "")
-        if not output.strip():
+        if code == 0:
             return f"ruff: No issues found in {path}"
         issues = len(output.strip().splitlines())
         return f"ruff ({issues} issue(s)):\n\n{output[:4000]}"

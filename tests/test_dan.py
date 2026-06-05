@@ -796,8 +796,14 @@ class TestSecurityUtilsMore:
         assert executor._is_simple_command("python script.py")
         assert not executor._is_simple_command("python script.py | more")
         assert executor._split_command("python demo.py") == ["python", "demo.py"]
+        assert executor._split_command('"C:\\Program Files\\Python311\\python.exe" -m pytest') == [
+            "C:\\Program Files\\Python311\\python.exe",
+            "-m",
+            "pytest",
+        ]
         assert executor._needs_windows_shell("echo hello")
         assert executor._base_command("C:\\Python\\python.exe script.py") == "python"
+        assert executor._base_command('"C:\\Program Files\\Python311\\python.exe" -m pytest') == "python"
         assert executor._get_restricted_env()["PATH"] == "C:\\Tools"
 
     def test_secure_command_executor_validate_command_blocks_dangerous_pattern(self):
@@ -807,6 +813,13 @@ class TestSecurityUtilsMore:
 
         with pytest.raises(ValueError, match="Blocked dangerous command pattern"):
             executor.validate_command("rm -rf /")
+
+    def test_secure_command_executor_allows_quoted_safe_arguments(self):
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+
+        executor.validate_command('py -c "print(123)"')
 
 
 class TestCoreToolsMore:
@@ -1213,14 +1226,24 @@ class TestCodeToolsBundle:
 
         root = tmp_path / "proj"
         root.mkdir()
+        (root / "tests").mkdir()
         (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
         monkeypatch.setattr(code_tools.shutil, "which", lambda name: None if name == "python" else "C:/Windows/py.exe")
+        monkeypatch.setattr(
+            code_tools.importlib.util,
+            "find_spec",
+            lambda name: object() if name == "ruff" else None,
+        )
+        recorded = []
 
         def fake_run(cmd, cwd=None, timeout=120):
+            recorded.append(cmd)
             if cmd[:3] == ["py", "-m", "pytest"]:
                 return 0, "2 passed", ""
-            if cmd[:2] == ["ruff", "check"]:
-                return 0, "", ""
+            if len(cmd) >= 4 and cmd[1:4] == ["-m", "ruff", "--version"]:
+                return 0, "ruff 0.8.0", ""
+            if len(cmd) >= 4 and cmd[1:4] == ["-m", "ruff", "check"]:
+                return 0, "All checks passed!\n", ""
             if cmd[:2] == ["ruff", "format"]:
                 return 0, "", ""
             return 0, "", ""
@@ -1232,7 +1255,10 @@ class TestCodeToolsBundle:
         format_result = code_tools.format_code(str(root), formatter="ruff")
 
         assert "Framework: pytest" in tests_result
+        assert recorded[0][-1] == str(root / "tests")
+        assert any(len(cmd) >= 4 and cmd[1:4] == ["-m", "ruff", "check"] for cmd in recorded)
         assert "ruff: No issues found" in lint_result
+        assert "issue(s)" not in lint_result
         assert "already formatted" in format_result
 
     def test_find_usages_refactor_analyze_and_deps(self, tmp_path, monkeypatch):

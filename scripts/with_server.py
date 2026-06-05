@@ -26,15 +26,48 @@ import shlex
 SHELL_FEATURES = ("|", ">", "<", "&", ";")
 
 
+def _has_shell_features(command):
+    """Return True when unquoted shell control operators are present."""
+    quote_char = ""
+    escaped = False
+
+    for char in command:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if quote_char:
+            if char == quote_char:
+                quote_char = ""
+            continue
+        if char in {"'", '"'}:
+            quote_char = char
+            continue
+        if char in SHELL_FEATURES:
+            return True
+
+    return False
+
+
+def _strip_matching_quotes(value):
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
 def _server_command_args(command):
     """Return argv for a server command without using subprocess shell=True."""
-    if any(feature in command for feature in SHELL_FEATURES):
+    if _has_shell_features(command):
         if platform.system() == "Windows":
             shell = os.environ.get("COMSPEC", r"C:\Windows\system32\cmd.exe")
             return [shell, "/d", "/s", "/c", command]
         shell = os.environ.get("SHELL", "/bin/sh")
         return [shell, "-c", command]
-    return shlex.split(command, posix=platform.system() != "Windows")
+    if platform.system() == "Windows":
+        return [_strip_matching_quotes(part) for part in shlex.split(command, posix=False)]
+    return shlex.split(command)
 
 def is_server_ready(port, timeout=30):
     """Wait for server to be ready by polling the port."""

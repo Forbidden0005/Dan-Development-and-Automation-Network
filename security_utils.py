@@ -77,7 +77,7 @@ class SecurePathValidator:
 class SecureCommandExecutor:
     """Secure command execution with sandboxing and validation."""
 
-    SHELL_FEATURES = ('|', '>', '<', '&', ';', '`', '$', '(', ')', '[', ']')
+    SHELL_FEATURES = ('|', '>', '<', '&', ';', '`')
     
     # Dangerous command patterns (expanded from original)
     DANGEROUS_PATTERNS = [
@@ -183,7 +183,7 @@ class SecureCommandExecutor:
         if not command or not isinstance(command, str):
             raise ValueError("Command must be a non-empty string")
 
-        if any(feature in command for feature in self.SHELL_FEATURES):
+        if self._has_shell_features(command):
             raise ValueError(
                 "Shell features are not supported by SecureCommandExecutor; "
                 "pass a single command and arguments instead"
@@ -197,13 +197,7 @@ class SecureCommandExecutor:
         # Check whitelist if enabled
         if self.use_whitelist:
             try:
-                import platform
-                # Parse command to get the base command
-                if platform.system() == "Windows":
-                    # On Windows, split on spaces simply — shlex chokes on backslash paths
-                    parsed = command.split()
-                else:
-                    parsed = shlex.split(command)
+                parsed = self._split_command(command)
                 if parsed:
                     base_command = parsed[0].split('/')[-1].split('\\')[-1]  # strip path
                     # Strip .exe/.cmd/.bat extension on Windows
@@ -294,15 +288,52 @@ class SecureCommandExecutor:
     
     def _is_simple_command(self, command: str) -> bool:
         """Check if command is simple enough to avoid shell=True."""
-        # Avoid shell=True for commands without shell features
-        return not any(feature in command for feature in self.SHELL_FEATURES)
+        # Avoid shell=True for commands without shell control operators.
+        return not self._has_shell_features(command)
+
+    def _has_shell_features(self, command: str) -> bool:
+        """Return True when unquoted shell control operators are present."""
+        quote_char = ""
+        escaped = False
+
+        for char in command:
+            if escaped:
+                escaped = False
+                continue
+
+            if char == "\\":
+                escaped = True
+                continue
+
+            if quote_char:
+                if char == quote_char:
+                    quote_char = ""
+                continue
+
+            if char in {"'", '"'}:
+                quote_char = char
+                continue
+
+            if char in self.SHELL_FEATURES:
+                return True
+
+        return False
 
     def _split_command(self, command: str) -> list[str]:
         """Split a simple command using platform-safe defaults."""
         import platform
         if platform.system() == "Windows":
-            return command.split()
+            return [
+                self._strip_matching_quotes(part)
+                for part in shlex.split(command, posix=False)
+            ]
         return shlex.split(command)
+
+    @staticmethod
+    def _strip_matching_quotes(value: str) -> str:
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            return value[1:-1]
+        return value
 
     def _base_command(self, command: str) -> str:
         parsed = self._split_command(command)
