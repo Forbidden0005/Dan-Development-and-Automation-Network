@@ -16,6 +16,7 @@ from security_utils import (
     sanitize_user_input,
     validate_fetch_url,
     validate_file_size,
+    validate_redirect_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -430,12 +431,29 @@ def http_request(
         if "User-Agent" not in headers:
             headers["User-Agent"] = "Dan/2.5 (Development Automation Network)"
 
-        kwargs: dict = dict(url=url, headers=headers, timeout=timeout, follow_redirects=True)
+        kwargs: dict = dict(headers=headers, timeout=timeout, follow_redirects=False)
         if body:
             kwargs["content"] = body.encode()
 
         with httpx.Client(max_redirects=5) as client:
-            r = client.request(method, **kwargs)
+            current_url = url
+            for redirect_count in range(6):
+                r = client.request(method, url=current_url, **kwargs)
+                if 300 <= r.status_code < 400 and r.headers.get("location"):
+                    if redirect_count >= 5:
+                        return f"Error making {method} request to {url}: too many redirects"
+                    current_url = validate_redirect_url(
+                        current_url,
+                        r.headers["location"],
+                        allow_local=allow_local,
+                    )
+                    if r.status_code == 303 or (
+                        r.status_code in {301, 302} and method not in {"GET", "HEAD"}
+                    ):
+                        method = "GET"
+                        kwargs.pop("content", None)
+                    continue
+                break
 
         ct = r.headers.get("content-type", "")
         lines = [

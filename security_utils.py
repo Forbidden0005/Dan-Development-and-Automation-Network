@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Set
 import subprocess
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -590,3 +590,11 @@ def validate_fetch_url(url: str, allow_local: bool = False) -> str:
         raise ValueError("local network address blocked; pass allow_local=True to permit it")
 
     return url.strip()
+
+
+def validate_redirect_url(current_url: str, location: str, allow_local: bool = False) -> str:
+    """Resolve and validate a redirect target before following it."""
+    if not isinstance(location, str) or not location.strip():
+        raise ValueError("redirect target must be a non-empty URL")
+
+    return validate_fetch_url(urljoin(current_url, location.strip()), allow_local=allow_local)

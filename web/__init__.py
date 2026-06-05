@@ -6,7 +6,7 @@ import re
 from html.parser import HTMLParser
 
 import tool_registry as registry
-from security_utils import validate_fetch_url
+from security_utils import validate_fetch_url, validate_redirect_url
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,20 @@ def web_fetch(url: str, max_chars: int = 15000, allow_local: bool = False) -> st
 
     try:
         headers = {"User-Agent": "Dan/2.0 (Development Automation Network)"}
-        with httpx.Client(follow_redirects=True, timeout=15) as client:
-            r = client.get(url, headers=headers)
+        with httpx.Client(timeout=15) as client:
+            current_url = url
+            for redirect_count in range(6):
+                r = client.request("GET", current_url, headers=headers, follow_redirects=False)
+                if 300 <= r.status_code < 400 and r.headers.get("location"):
+                    if redirect_count >= 5:
+                        return f"Error fetching {url}: too many redirects"
+                    current_url = validate_redirect_url(
+                        current_url,
+                        r.headers["location"],
+                        allow_local=allow_local,
+                    )
+                    continue
+                break
             r.raise_for_status()
 
         content_type = r.headers.get("content-type", "")

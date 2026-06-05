@@ -858,6 +858,7 @@ class TestWebTools:
 
         class FakeResponse:
             def __init__(self, content_type, text="", payload=None, content=b"123"):
+                self.status_code = 200
                 self.headers = {"content-type": content_type}
                 self.text = text
                 self._payload = payload or {}
@@ -882,6 +883,9 @@ class TestWebTools:
             def get(self, url, headers=None):
                 return self._response
 
+            def request(self, method, url, headers=None, follow_redirects=False):
+                return self.get(url, headers=headers)
+
         json_response = FakeResponse("application/json", payload={"ok": True})
         binary_response = FakeResponse("application/octet-stream", content=b"123456")
 
@@ -905,6 +909,43 @@ class TestWebTools:
         assert "unsupported URL scheme" in web.web_fetch("file:///etc/passwd")
         assert "local network address" in web.web_fetch("http://127.0.0.1:8000/admin")
         assert "local network address" in web.web_fetch("http://localhost:8000/admin")
+
+    def test_web_fetch_rejects_redirect_to_local_url(self, monkeypatch):
+        import web
+
+        class FakeResponse:
+            def __init__(self, status_code, location="", text=""):
+                self.status_code = status_code
+                self.headers = {"content-type": "text/html"}
+                if location:
+                    self.headers["location"] = location
+                self.text = text
+                self.content = text.encode()
+
+            def raise_for_status(self):
+                return None
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def get(self, url, headers=None):
+                return FakeResponse(200, text="local admin panel")
+
+            def request(self, method, url, headers=None, follow_redirects=False):
+                assert follow_redirects is False
+                return FakeResponse(302, location="http://127.0.0.1:8000/admin")
+
+        monkeypatch.setitem(
+            sys.modules,
+            "httpx",
+            type("Httpx", (), {"Client": lambda *args, **kwargs: FakeClient()}),
+        )
+
+        assert "local network address" in web.web_fetch("https://example.com/redirect")
 
     def test_register_web_tools_registers_expected_names(self, monkeypatch):
         import web
@@ -983,6 +1024,42 @@ class TestSecurityUtilsMore:
             "https://example.com", method="trace"
         )
         assert "local network address" in tools.http_request("http://127.0.0.1:8000", method="GET")
+
+    def test_http_request_rejects_redirect_to_local_url(self, monkeypatch):
+        import tools
+
+        class FakeResponse:
+            def __init__(self, status_code, location="", text=""):
+                self.status_code = status_code
+                self.reason_phrase = "Found" if status_code == 302 else "OK"
+                self.headers = {"content-type": "text/plain"}
+                if location:
+                    self.headers["location"] = location
+                self.text = text
+                self.content = text.encode()
+
+            def json(self):
+                return {}
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def request(self, method, **kwargs):
+                if kwargs.get("follow_redirects") is False:
+                    return FakeResponse(302, location="http://localhost:8000/private")
+                return FakeResponse(200, text="local private data")
+
+        monkeypatch.setitem(
+            sys.modules,
+            "httpx",
+            type("Httpx", (), {"Client": lambda *args, **kwargs: FakeClient()}),
+        )
+
+        assert "local network address" in tools.http_request("https://example.com/redirect")
 
 
 class TestCoreToolsMore:

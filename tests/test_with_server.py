@@ -42,3 +42,14 @@ def test_server_command_with_shell_features_uses_explicit_shell(monkeypatch):
         "/c",
         "cd backend && python server.py",
     ]
+
+
+def test_server_output_is_not_piped():
+    with_server = _load_with_server()
+
+    kwargs = with_server._server_output_kwargs()
+
+    assert kwargs == {
+        "stdout": with_server.subprocess.DEVNULL,
+        "stderr": with_server.subprocess.STDOUT,
+    }

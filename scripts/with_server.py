@@ -70,6 +70,11 @@ def _server_command_args(command):
     return shlex.split(command)
 
 
+def _server_output_kwargs():
+    """Discard server output so long-running child processes cannot block on full pipes."""
+    return {"stdout": subprocess.DEVNULL, "stderr": subprocess.STDOUT}
+
+
 def is_server_ready(port, timeout=30):
     """Wait for server to be ready by polling the port."""
     start_time = time.time()
@@ -133,7 +138,7 @@ def main():
             print(f"Starting server {i+1}/{len(servers)}: {server['cmd']}")
 
             process = subprocess.Popen(
-                _server_command_args(server["cmd"]), stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                _server_command_args(server["cmd"]), **_server_output_kwargs()
             )
             server_processes.append(process)
 
