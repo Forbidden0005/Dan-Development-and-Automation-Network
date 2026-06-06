@@ -2843,7 +2843,7 @@ class TestSkillsBundle:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def get(self, url):
+            def get(self, url, **kwargs):
                 return Response()
 
         fake_httpx = type("Httpx", (), {"Client": Client})
@@ -2854,6 +2854,39 @@ class TestSkillsBundle:
         assert "Bug Fixes" in changelog
         assert "Server responding" in web_result
         assert "Title: Demo" in web_result
+
+    def test_webapp_test_rejects_local_and_redirect_to_local_urls(self, monkeypatch):
+        import skills
+
+        direct = skills.run_webapp_test("http://127.0.0.1:8000")
+        assert "local network address" in direct
+
+        class RedirectResponse:
+            status_code = 302
+            content = b""
+            headers = {"location": "http://127.0.0.1:8000/admin"}
+            text = ""
+
+        class Client:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def get(self, url, **kwargs):
+                assert kwargs.get("follow_redirects") is False
+                return RedirectResponse()
+
+        fake_httpx = type("Httpx", (), {"Client": Client})
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+        redirected = skills.run_webapp_test("https://example.com/redirect")
+
+        assert "local network address" in redirected
 
     def test_generate_changelog_errors_and_registers_tools(self, monkeypatch):
         import skills

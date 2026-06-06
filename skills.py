@@ -9,7 +9,12 @@ from collections import defaultdict
 from pathlib import Path
 
 import tool_registry as registry
-from security_utils import SecurePathValidator, sanitize_user_input
+from security_utils import (
+    SecurePathValidator,
+    sanitize_user_input,
+    validate_fetch_url,
+    validate_redirect_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -290,8 +295,13 @@ def generate_changelog(since: str = "", until: str = "", format: str = "markdown
 # ── Web App Test Runner (from webapp-testing skill) ──────────────────────────
 
 
-def run_webapp_test(url: str, script: str = "", checks: str = "") -> str:
+def run_webapp_test(url: str, script: str = "", checks: str = "", allow_local: bool = False) -> str:
     """Test a web application URL for basic health and optional Playwright checks."""
+    try:
+        url = validate_fetch_url(url, allow_local=allow_local)
+    except ValueError as e:
+        return f"Security error: {e}"
+
     try:
         import httpx
     except ImportError:
@@ -301,8 +311,21 @@ def run_webapp_test(url: str, script: str = "", checks: str = "") -> str:
 
     # Basic health check
     try:
-        with httpx.Client(follow_redirects=True, timeout=10) as client:
-            r = client.get(url)
+        with httpx.Client(timeout=10) as client:
+            current_url = url
+            for redirect_count in range(6):
+                r = client.get(current_url, follow_redirects=False)
+                if 300 <= r.status_code < 400 and r.headers.get("location"):
+                    if redirect_count >= 5:
+                        return f"Error testing {url}: too many redirects"
+                    current_url = validate_redirect_url(
+                        current_url,
+                        r.headers["location"],
+                        allow_local=allow_local,
+                    )
+                    continue
+                break
+
             results.append(f"GET {url}: {r.status_code} ({len(r.content):,} bytes)")
             results.append(f"Content-Type: {r.headers.get('content-type', 'unknown')}")
 
@@ -327,6 +350,8 @@ def run_webapp_test(url: str, script: str = "", checks: str = "") -> str:
                 else:
                     results.append("✓ No obvious errors in HTML")
 
+    except ValueError as e:
+        results.append(f"Security error: {e}")
     except Exception as e:
         results.append(f"❌ Connection failed: {e}")
 
@@ -403,6 +428,11 @@ def register_skill_tools() -> None:
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "URL to test"},
+                "allow_local": {
+                    "type": "boolean",
+                    "description": "Allow loopback/private-network URLs",
+                    "default": False,
+                },
             },
             "required": ["url"],
         },
