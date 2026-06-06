@@ -65,6 +65,17 @@ def _backup(path: Path) -> str | None:
 # ── Tool Handlers ────────────────────────────────────────────────────────────
 
 
+def _validate_text_payload(label: str, value: str, max_length: int) -> str:
+    """Validate file payloads without changing the caller's intended text."""
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    if len(value) > max_length:
+        raise ValueError(f"{label} too large: {len(value)} > {max_length}")
+    if "\x00" in value:
+        raise ValueError(f"{label} must not contain null bytes")
+    return value
+
+
 def read_file(path: str, offset: int = 0, limit: int = 0) -> str:
     """Read a file's contents with security validation."""
     try:
@@ -112,7 +123,7 @@ def write_file(path: str, content: str, create_dirs: bool = True) -> str:
     try:
         # Sanitize inputs
         path = sanitize_user_input(path, max_length=500)
-        content = sanitize_user_input(content, max_length=1000000)  # 1MB limit
+        content = _validate_text_payload("content", content, max_length=1000000)
 
         p = _safe_path(path)
         if create_dirs:
@@ -148,8 +159,8 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
     try:
         # Sanitize inputs
         path = sanitize_user_input(path, max_length=500)
-        old_text = sanitize_user_input(old_text, max_length=100000)
-        new_text = sanitize_user_input(new_text, max_length=100000)
+        old_text = _validate_text_payload("old_text", old_text, max_length=100000)
+        new_text = _validate_text_payload("new_text", new_text, max_length=100000)
 
         p = _safe_path(path)
         if not p.exists():

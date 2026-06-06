@@ -109,6 +109,16 @@ class TestCoreTools:
         assert "✓" in result
         assert fp.read_text() == "hello world"
 
+    def test_write_file_preserves_exact_content(self):
+        from tools import write_file
+
+        fp = Path(self.tmpdir) / "exact.txt"
+        content = "\n  leading whitespace\n\n\ntrailing whitespace  \n"
+        result = write_file(str(fp), content)
+
+        assert "Wrote" in result
+        assert fp.read_text(encoding="utf-8") == content
+
     def test_write_creates_dirs(self):
         from tools import write_file
 
@@ -124,6 +134,17 @@ class TestCoreTools:
         result = edit_file(str(fp), "bar", "qux")
         assert "✓" in result
         assert fp.read_text() == "foo qux baz"
+
+    def test_edit_file_preserves_exact_replacement_text(self):
+        from tools import edit_file
+
+        fp = Path(self.tmpdir) / "exact-edit.txt"
+        fp.write_text("alpha\nTARGET\nomega\n", encoding="utf-8")
+        replacement = "  beta\n\n\ngamma  \n"
+        result = edit_file(str(fp), "TARGET", replacement)
+
+        assert "Edited" in result
+        assert fp.read_text(encoding="utf-8") == f"alpha\n{replacement}\nomega\n"
 
     def test_edit_not_found(self):
         from tools import edit_file
@@ -3094,6 +3115,26 @@ class TestSecureToolsExpanded:
         assert "2 | beta" in read_result
         assert "Edited" in edit_result
         assert "2 | two" in async_result
+
+    def test_secure_write_and_edit_preserve_exact_content(self, monkeypatch, tmp_path):
+        import tools_secure
+
+        monkeypatch.setattr(
+            tools_secure,
+            "_path_validator",
+            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+        )
+        file_path = tmp_path / "exact.txt"
+        content = "\n  leading whitespace\n\n\nTARGET\ntrailing whitespace  \n"
+        replacement = "  beta\n\n\ngamma  \n"
+
+        write_result = tools_secure.write_file(str(file_path), content)
+        edit_result = tools_secure.edit_file(str(file_path), "TARGET", replacement)
+        expected = "\n  leading whitespace\n\n\n" f"{replacement}" "\n" "trailing whitespace  \n"
+
+        assert "Wrote" in write_result
+        assert "Edited" in edit_result
+        assert file_path.read_text(encoding="utf-8") == expected
 
     def test_secure_search_listing_and_bash_edge_cases(self, monkeypatch, tmp_path):
         import tools_secure
