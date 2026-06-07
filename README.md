@@ -8,12 +8,14 @@ This repository is in a transition phase: the runtime works, tests pass, and cor
 
 - Runtime health is good: `pytest` passes and `ruff check .` passes.
 - Documentation has been reset to match the actual project instead of the unrelated Lucid/WinUI material that had drifted into the repo.
+- `dan_gui_modern.py` is the supported desktop shell. It uses a Claude-inspired,
+  Dan-branded workspace with dark mode by default and a persisted light-mode option.
 - The next focus is productionization: repository cleanup, packaging, release flow, architecture tightening, and Windows-first polish.
 
 ## What Dan Includes Today
 
 - CLI entry point in `Dan.py`
-- Desktop GUI entry points in `dan_gui.py` and `dan_gui_modern.py`
+- Supported desktop GUI shell in `dan_gui_modern.py`; legacy GUI/backing behavior remains in `dan_gui.py`
 - Provider adapters for Anthropic, OpenAI, Venice, and Ollama
 - Core tool registry with file, search, shell, git, project, code execution, knowledge, web, worker, and skill tool families
 - Security-oriented path and command validation
@@ -85,7 +87,7 @@ python scripts/repo_health.py
 ## Immediate Production Gaps
 
 - Top-level repository layout is still too noisy for long-term maintenance.
-- The desktop app has multiple GUI paths without a formally chosen primary shell.
+- The legacy GUI file still backs shared controller behavior and should be extracted or retired carefully.
 - Windows packaging and installer strategy are not yet defined.
 - Operational docs existed in conflicting versions and required reset.
 - Several historical analysis documents should be archived or reorganized instead of living at repo root forever.
