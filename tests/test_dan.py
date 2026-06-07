@@ -187,13 +187,7 @@ class TestCoreTools:
     def test_bash_timeout(self):
         from tools import run_bash
 
-        # Override the executor timeout for this test
-        import tools
-
-        old_timeout = tools._command_executor.max_execution_time
-        tools._command_executor.max_execution_time = 1
-        result = run_bash("sleep 5")
-        tools._command_executor.max_execution_time = old_timeout
+        result = run_bash("sleep 5", timeout=1)
         assert "timed out" in result or "Execution error" in result or "Security error" in result
 
     def test_bash_blocked(self):
