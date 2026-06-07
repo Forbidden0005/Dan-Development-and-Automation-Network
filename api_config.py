@@ -20,6 +20,9 @@ SECRET_KEY_ENV_MAP = {
 DEFAULT_CONFIG = {
     "provider": "ollama",
     "model": "",
+    "ui": {
+        "theme": "dark",
+    },
     "venice": {
         "model": "llama-3.3-70b",
         "base_url": "https://api.venice.ai/api/v1",

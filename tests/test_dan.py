@@ -2260,6 +2260,15 @@ class TestDanGuiComponents:
 
 
 class TestApiConfigSecrets:
+    def test_load_config_includes_dark_ui_theme_default(self, monkeypatch, tmp_path):
+        import api_config
+
+        monkeypatch.setattr(api_config, "CONFIG_FILE", tmp_path / "api_config.json")
+
+        config = api_config.load_config()
+
+        assert config["ui"]["theme"] == "dark"
+
     def test_set_value_routes_secret_to_session_env(self, monkeypatch, tmp_path):
         import api_config
 
@@ -2329,6 +2338,35 @@ class TestApiConfigSecrets:
         import api_config
 
         assert "Unknown secret key" in api_config.set_secret("bad.key", "x")
+
+
+class TestDanGuiTheme:
+    def test_normalize_theme_accepts_only_dark_or_light(self):
+        from dan_gui_theme import normalize_theme
+
+        assert normalize_theme("dark") == "dark"
+        assert normalize_theme("light") == "light"
+        assert normalize_theme(" LIGHT ") == "light"
+        assert normalize_theme("system") == "dark"
+        assert normalize_theme(None) == "dark"
+
+    def test_theme_from_config_falls_back_to_dark_for_invalid_saved_value(self):
+        from dan_gui_theme import theme_from_config
+
+        assert theme_from_config({"ui": {"theme": "light"}}) == "light"
+        assert theme_from_config({"ui": {"theme": "sepia"}}) == "dark"
+        assert theme_from_config({}) == "dark"
+
+    def test_theme_tokens_expose_dark_and_light_palettes(self):
+        from dan_gui_theme import get_theme_tokens
+
+        dark = get_theme_tokens("dark")
+        light = get_theme_tokens("light")
+
+        assert dark.name == "dark"
+        assert light.name == "light"
+        assert dark.background != light.background
+        assert dark.accent == light.accent
 
 
 class TestAuthSystemHardening:

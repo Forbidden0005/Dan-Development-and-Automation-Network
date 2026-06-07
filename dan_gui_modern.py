@@ -1,450 +1,613 @@
 #!/usr/bin/env python3
-"""Modern shell for Dan GUI built on the stable chat controller."""
+"""Claude-inspired modern shell for the Dan desktop GUI."""
 
 from __future__ import annotations
 
+import json
+import os
+import threading
 import tkinter as tk
+from pathlib import Path
 
-from config import APP_NAME, APP_VERSION
-from dan_gui import (
-    ASST_BG,
-    BG,
-    BORDER,
-    BORDER2,
-    CARD,
-    CARD_HOV,
-    DanGUI,
-    ERROR_C,
-    HEADER_H,
-    INDIGO,
-    PURPLE,
-    PURPLE_DIM,
-    PURPLE_HOV,
-    SUCCESS,
-    SURFACE,
-    SURFACE2,
-    TEXT,
-    TEXT2,
-    TEXT3,
-    TOOL_C,
-    WARNING,
-    _btn,
-    _label,
-)
-from dan_gui_components import GradientStrip
-from dan_gui_support import build_actions_text
 from actions import get_all_actions
+from agent import AgentInterrupted, run_agent_loop
+from config import APP_NAME, APP_VERSION, USER_DATA_DIR
+from dan_gui import DanGUI
+from dan_gui_support import (
+    build_actions_text,
+    estimate_tokens,
+    extract_assistant_text,
+    format_relative_date,
+    infer_provider_from_model,
+    session_title_from_file,
+    timestamp_label,
+)
+from dan_gui_theme import THEME_DARK, THEME_LIGHT, get_theme_tokens, normalize_theme, theme_from_config
 from gui_compat import ctk, ensure_gui_runtime
+from providers import get_provider
 from tool_registry import get_all_tools
 import session_mgr
 
 
-class ModernLiveBubble(ctk.CTkFrame):
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent")
-        from dan_gui import LiveBubble as LegacyLiveBubble
+MODEL_CHOICES = [
+    "qwen2.5-coder:14b",
+    "qwen2.5-coder:7b",
+    "qwen2.5-coder:32b",
+    "llama3.1:8b",
+    "deepseek-coder-v2:16b",
+    "claude-sonnet-4-6",
+    "claude-opus-4-20250514",
+    "gpt-4o",
+    "gpt-4o-mini",
+]
 
-        self._delegate = LegacyLiveBubble(parent)
 
-    def __getattr__(self, item):
-        return getattr(self._delegate, item)
+class ModernLiveBubble:
+    """Streaming assistant bubble using the active modern theme."""
+
+    def __init__(self, parent, tokens, font_factory):
+        self.ui = tokens
+        self._font = font_factory
+        self._has_content = False
+        self._streaming = False
+        self._full_text = ""
+
+        self.outer = ctk.CTkFrame(parent, fg_color="transparent")
+        self.outer.grid(sticky="ew", pady=(0, 10))
+        self.outer.grid_columnconfigure(1, weight=1)
+        self.outer.grid_columnconfigure(2, minsize=84, weight=0)
+
+        avatar = ctk.CTkFrame(
+            self.outer,
+            width=32,
+            height=32,
+            fg_color=self.ui.accent_soft,
+            corner_radius=16,
+            border_width=1,
+            border_color=self.ui.border,
+        )
+        avatar.grid(row=0, column=0, padx=(0, 10), sticky="n", pady=(4, 0))
+        avatar.grid_propagate(False)
+        ctk.CTkLabel(
+            avatar,
+            text="D",
+            width=32,
+            height=32,
+            font=self._font(14, "bold"),
+            text_color=self.ui.accent,
+        ).place(relx=0.5, rely=0.5, anchor="center")
+
+        self.bubble = ctk.CTkFrame(
+            self.outer,
+            fg_color=self.ui.assistant_bubble,
+            corner_radius=16,
+            border_width=1,
+            border_color=self.ui.border,
+        )
+        self.bubble.grid(row=0, column=1, sticky="ew")
+        self.bubble.grid_columnconfigure(0, weight=1)
+
+        self.status = ctk.CTkLabel(
+            self.bubble,
+            text="Working...",
+            anchor="w",
+            font=self._font(12),
+            text_color=self.ui.text_subtle,
+        )
+        self.status.grid(row=0, column=0, padx=14, pady=12, sticky="w")
+
+        self.textbox = ctk.CTkTextbox(
+            self.bubble,
+            fg_color="transparent",
+            border_width=0,
+            corner_radius=0,
+            wrap="word",
+            height=42,
+            font=self._font(14),
+            text_color=self.ui.text,
+            activate_scrollbars=False,
+        )
+        self._textbox_widget = self.textbox._textbox
+        self._textbox_widget.tag_configure("tool", foreground=self.ui.tool_text)
+        self._textbox_widget.tag_configure("normal", foreground=self.ui.text)
+
+    def set_status(self, _=None):
+        return None
+
+    def add_tool_line(self, text: str):
+        self._ensure_textbox()
+        self.textbox.configure(state="normal")
+        self._textbox_widget.insert("end", text + "\n", "tool")
+        self._fit()
+        self.textbox.see("end")
+        self.textbox.configure(state="disabled")
+
+    def append_text(self, chunk: str):
+        self._ensure_textbox()
+        self._full_text += chunk
+        if not self._streaming:
+            self._streaming = True
+            if self._has_content:
+                self.textbox.configure(state="normal")
+                self._textbox_widget.insert("end", "\n", "normal")
+                self.textbox.configure(state="disabled")
+        self.textbox.configure(state="normal")
+        self._textbox_widget.insert("end", chunk, "normal")
+        self._fit()
+        self.textbox.see("end")
+        self.textbox.configure(state="disabled")
+
+    def finish(self, fallback: str = ""):
+        if not self._has_content and fallback:
+            self._ensure_textbox()
+            self._full_text = fallback
+            self.textbox.configure(state="normal")
+            self._textbox_widget.insert("end", fallback, "normal")
+            self.textbox.configure(state="disabled")
+        self._fit()
+        self._add_copy_button()
+
+    def _ensure_textbox(self):
+        if self._has_content:
+            return
+        self._has_content = True
+        try:
+            self.status.grid_remove()
+        except Exception:
+            pass
+        self.textbox.grid(row=0, column=0, sticky="ew", padx=6, pady=8)
+
+    def _fit(self):
+        try:
+            lines = int(self.textbox.index("end-1c").split(".")[0])
+            self.textbox.configure(height=min(max(lines * 22 + 16, 50), 700))
+        except Exception:
+            pass
+
+    def _add_copy_button(self):
+        try:
+            text_value = self._full_text.strip() or self.textbox.get("1.0", "end-1c").strip()
+            if not text_value:
+                return
+            copy_button = ctk.CTkButton(
+                self.bubble,
+                text="Copy",
+                width=48,
+                height=24,
+                fg_color="transparent",
+                hover_color=self.ui.surface_hover,
+                text_color=self.ui.text_subtle,
+                corner_radius=8,
+                font=self._font(11),
+                command=lambda value=text_value: (
+                    self.bubble.winfo_toplevel().clipboard_clear(),
+                    self.bubble.winfo_toplevel().clipboard_append(value),
+                ),
+            )
+            copy_button.place(relx=1.0, rely=0.0, anchor="ne", x=-6, y=6)
+            copy_button.lower()
+            self.bubble.bind("<Enter>", lambda _event: copy_button.lift())
+            self.bubble.bind("<Leave>", lambda _event: copy_button.lower())
+        except Exception:
+            pass
 
 
 class DanModernGUI(DanGUI):
+    """Supported desktop shell: Claude-inspired, Dan-branded, theme-aware."""
+
+    SIDEBAR_W = 304
+    RIGHT_RAIL_W = 264
+
     def __init__(self):
+        from api_config import load_config
+
+        self._theme_name = theme_from_config(load_config())
+        self.ui = get_theme_tokens(self._theme_name)
+        self._workspace_pane = "Files"
+        self._workspace_buttons = {}
         super().__init__()
-        self.title(f"{APP_NAME} Studio · v{APP_VERSION}")
-        self.geometry("1380x900")
+        self.title(f"{APP_NAME} - v{APP_VERSION}")
+        self.geometry("1180x660")
+        self.minsize(1020, 600)
+
+    def _font(self, size: int, weight: str = "normal"):
+        return ctk.CTkFont(family="Segoe UI", size=size, weight=weight)
+
+    def _label(self, parent, text, size=13, weight="normal", color=None, **kwargs):
+        return ctk.CTkLabel(
+            parent,
+            text=text,
+            text_color=color or self.ui.text,
+            font=self._font(size, weight),
+            **kwargs,
+        )
+
+    def _button(
+        self,
+        parent,
+        text,
+        command,
+        *,
+        width=None,
+        height=36,
+        fg_color=None,
+        hover_color=None,
+        text_color=None,
+        radius=10,
+        border=False,
+        **kwargs,
+    ):
+        props = {
+            "height": height,
+            "fg_color": fg_color or self.ui.surface,
+            "hover_color": hover_color or self.ui.surface_hover,
+            "text_color": text_color or self.ui.text,
+            "corner_radius": radius,
+            "font": self._font(13),
+            "command": command,
+        }
+        if border:
+            props.update({"border_width": 1, "border_color": self.ui.border})
+        if width is not None:
+            props["width"] = width
+        props.update(kwargs)
+        return ctk.CTkButton(parent, text=text, **props)
+
+    def _popup(self, title: str, width: int, height: int):
+        window = ctk.CTkToplevel(self)
+        window.title(title)
+        window.geometry(f"{width}x{height}")
+        window.configure(fg_color=self.ui.background)
+        window.transient(self)
+        window.grab_set()
+        window.after(50, lambda: (window.lift(), window.focus_force()))
+        return window
 
     def _shell_counts(self) -> tuple[int, int]:
         return len(session_mgr.list_sessions(include_auto=True)), len(get_all_tools())
 
-    def _apply_shell_metrics(self):
-        sessions, tools = self._shell_counts()
-        if hasattr(self, "_sessions_stat"):
-            self._sessions_stat.configure(text=str(sessions))
-        if hasattr(self, "_tools_stat"):
-            self._tools_stat.configure(text=str(tools))
-        if hasattr(self, "_hero_subtitle"):
-            self._hero_subtitle.configure(
-                text=f"{sessions} saved chats ready · {tools} tools available · streamlined for focused build sessions"
-            )
-
-    def _inject_prompt(self, text: str):
-        self.input_box.delete("1.0", "end")
-        self.input_box.insert("1.0", text)
-        self.input_box.focus()
-
     def _build_ui(self):
-        self.grid_columnconfigure(0, weight=0)
+        ctk.set_appearance_mode(self.ui.appearance_mode)
+        self.configure(fg_color=self.ui.background)
+        self.grid_columnconfigure(0, weight=0, minsize=self.SIDEBAR_W)
         self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=0, minsize=self.RIGHT_RAIL_W)
+        self.grid_rowconfigure(0, weight=0)
         self.grid_rowconfigure(1, weight=1)
-        self._build_header()
+        self.grid_rowconfigure(2, weight=0)
+
         self._build_sidebar()
+        self._build_header()
         self._build_chat_area()
+        self._build_right_rail()
         self._build_status_bar()
 
     def _build_header(self):
-        outer = ctk.CTkFrame(self, height=HEADER_H + 16, fg_color=SURFACE, corner_radius=0)
-        outer.grid(row=0, column=0, columnspan=2, sticky="ew")
-        outer.grid_propagate(False)
-        outer.grid_columnconfigure(1, weight=1)
-        outer.grid_columnconfigure(3, weight=0)
+        header = ctk.CTkFrame(self, height=64, fg_color=self.ui.main, corner_radius=0)
+        header.grid(row=0, column=1, columnspan=2, sticky="ew")
+        header.grid_propagate(False)
+        header.grid_columnconfigure(0, weight=1)
 
-        GradientStrip(outer, color_one=PURPLE, color_two=INDIGO, height=3, bg=SURFACE).place(
-            x=0, y=0, relwidth=1
+        title = ctk.CTkFrame(header, fg_color="transparent")
+        title.grid(row=0, column=0, padx=24, pady=12, sticky="w")
+        self._label(title, "What do you want to build?", 18, "bold").grid(
+            row=0, column=0, sticky="w"
         )
-
-        brand = ctk.CTkFrame(outer, fg_color="transparent")
-        brand.grid(row=0, column=0, padx=(20, 10), pady=16, sticky="w")
-        ctk.CTkLabel(
-            brand,
-            text="◈",
-            text_color=PURPLE,
-            font=ctk.CTkFont(size=26),
-        ).grid(row=0, column=0, padx=(0, 10))
-        title_block = ctk.CTkFrame(brand, fg_color="transparent")
-        title_block.grid(row=0, column=1, sticky="w")
-        ctk.CTkLabel(
-            title_block,
-            text=f"{APP_NAME} Studio",
-            text_color=TEXT,
-            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
-        ).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(
-            title_block,
-            text="Calm, focused, production-minded development workspace",
-            text_color=TEXT3,
-            font=ctk.CTkFont(family="Segoe UI", size=11),
+        self._label(
+            title,
+            "Chat-first local workspace.",
+            11,
+            color=self.ui.text_subtle,
         ).grid(row=1, column=0, sticky="w")
 
-        center = ctk.CTkFrame(outer, fg_color="transparent")
-        center.grid(row=0, column=1, sticky="ew")
-        center.grid_columnconfigure(0, weight=1)
-        chips = ctk.CTkFrame(center, fg_color="transparent")
-        chips.grid(row=0, column=0)
+        controls = ctk.CTkFrame(header, fg_color="transparent")
+        controls.grid(row=0, column=1, padx=(8, 20), pady=12, sticky="e")
 
-        self._model_badge = ctk.CTkFrame(
-            chips, fg_color=CARD, corner_radius=18, border_width=1, border_color=BORDER2
+        self._model_lbl = self._label(
+            controls,
+            f"  {self.model_name}  ",
+            11,
+            color=self.ui.text_muted,
         )
-        self._model_badge.grid(row=0, column=0, padx=(0, 8))
-        self._model_lbl = ctk.CTkLabel(
-            self._model_badge,
-            text=f"  {self.model_name}  ",
-            text_color=TEXT2,
-            font=ctk.CTkFont(family="Segoe UI", size=11),
-        )
-        self._model_lbl.grid(padx=4, pady=3)
+        self._model_lbl.grid(row=0, column=0, padx=(0, 8))
 
-        self._provider_badge = ctk.CTkFrame(
-            chips, fg_color=SURFACE2, corner_radius=18, border_width=1, border_color=BORDER
+        self._provider_lbl = self._label(
+            controls,
+            f"  {self.provider_name}  ",
+            11,
+            color=self.ui.text_subtle,
         )
-        self._provider_badge.grid(row=0, column=1, padx=(0, 8))
-        self._provider_lbl = ctk.CTkLabel(
-            self._provider_badge,
-            text=f"  {self.provider_name}  ",
-            text_color=TEXT3,
-            font=ctk.CTkFont(family="Segoe UI", size=11),
-        )
-        self._provider_lbl.grid(padx=4, pady=3)
+        self._provider_lbl.grid(row=0, column=1, padx=(0, 8))
 
-        self._status_chip = ctk.CTkFrame(
-            chips, fg_color="#0f1d17", corner_radius=18, border_width=1, border_color="#1f5133"
+        target_theme = THEME_LIGHT if self._theme_name == THEME_DARK else THEME_DARK
+        self._theme_btn = self._button(
+            controls,
+            f"{target_theme.title()} mode",
+            self._toggle_theme,
+            width=96,
+            height=32,
+            border=True,
+            text_color=self.ui.text_muted,
         )
-        self._status_chip.grid(row=0, column=2)
-        self._status_dot = ctk.CTkLabel(
-            self._status_chip, text="●", text_color=SUCCESS, font=ctk.CTkFont(size=10)
-        )
-        self._status_dot.grid(row=0, column=0, padx=(8, 4), pady=3)
-        self._status_txt = ctk.CTkLabel(
-            self._status_chip,
-            text="Ready",
-            text_color=TEXT2,
-            font=ctk.CTkFont(family="Segoe UI", size=11),
-        )
-        self._status_txt.grid(row=0, column=1, padx=(0, 10), pady=3)
+        self._theme_btn.grid(row=0, column=2, padx=(0, 8))
 
-        actions = ctk.CTkFrame(outer, fg_color="transparent")
-        actions.grid(row=0, column=3, padx=(10, 18), pady=16, sticky="e")
-        _btn(actions, "Prompts", self.show_prompts, w=84, h=36, fg=CARD, hov=CARD_HOV).grid(
-            row=0, column=0, padx=(0, 8)
-        )
-        _btn(actions, "Actions", self.show_actions, w=84, h=36, fg=CARD, hov=CARD_HOV).grid(
-            row=0, column=1, padx=(0, 8)
-        )
-        _btn(actions, "Settings", self.show_settings, w=88, h=36, fg=PURPLE_DIM, hov=PURPLE).grid(
-            row=0, column=2
-        )
+        self._button(
+            controls,
+            "Prompts",
+            self.show_prompts,
+            width=78,
+            height=32,
+            border=True,
+            text_color=self.ui.text_muted,
+        ).grid(row=0, column=3, padx=(0, 8))
+        self._button(
+            controls,
+            "Settings",
+            self.show_settings,
+            width=84,
+            height=32,
+            fg_color=self.ui.accent,
+            hover_color=self.ui.accent_hover,
+            text_color=self.ui.accent_text,
+        ).grid(row=0, column=4)
+
+        tk.Frame(header, height=1, bg=self.ui.border).place(relx=0, rely=1, relwidth=1, y=-1)
 
     def _build_sidebar(self):
-        self.sidebar = ctk.CTkFrame(self, width=300, fg_color=SURFACE, corner_radius=0)
-        self.sidebar.grid(row=1, column=0, rowspan=2, sticky="nsew")
+        self.sidebar = ctk.CTkFrame(self, width=self.SIDEBAR_W, fg_color=self.ui.sidebar)
+        self.sidebar.grid(row=0, column=0, rowspan=3, sticky="nsew")
         self.sidebar.grid_propagate(False)
         self.sidebar.grid_columnconfigure(0, weight=1)
         self.sidebar.grid_rowconfigure(4, weight=1)
 
-        tk.Frame(self.sidebar, width=1, bg=BORDER).place(relx=1.0, rely=0, relheight=1, x=-1)
+        brand = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        brand.grid(row=0, column=0, padx=18, pady=(22, 16), sticky="ew")
+        brand.grid_columnconfigure(1, weight=1)
 
-        hero = ctk.CTkFrame(
-            self.sidebar, fg_color=SURFACE2, corner_radius=18, border_width=1, border_color=BORDER
+        mark = ctk.CTkFrame(
+            brand,
+            width=42,
+            height=42,
+            fg_color=self.ui.accent_soft,
+            corner_radius=12,
+            border_width=1,
+            border_color=self.ui.border,
         )
-        hero.grid(row=0, column=0, padx=14, pady=(14, 10), sticky="ew")
-        hero.grid_columnconfigure(0, weight=1)
-        _label(hero, "Workspace", 11, "bold", color=TEXT3, anchor="w").grid(
-            row=0, column=0, padx=14, pady=(12, 2), sticky="ew"
+        mark.grid(row=0, column=0, padx=(0, 12), sticky="w")
+        mark.grid_propagate(False)
+        self._label(mark, "D", 24, "bold", color=self.ui.accent).place(
+            relx=0.5, rely=0.5, anchor="center"
         )
-        _label(
-            hero,
-            "Start a fresh chat, reopen a session, or switch models without losing flow.",
-            13,
-            color=TEXT2,
-            anchor="w",
-            wraplength=240,
-            justify="left",
-        ).grid(row=1, column=0, padx=14, pady=(0, 8), sticky="ew")
-        strip = ctk.CTkFrame(hero, fg_color="transparent")
-        strip.grid(row=2, column=0, padx=12, pady=(0, 10), sticky="ew")
-        strip.grid_columnconfigure((0, 1), weight=1)
-        sessions_card = ctk.CTkFrame(
-            strip, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER
+
+        self._label(brand, APP_NAME, 25, "bold").grid(row=0, column=1, sticky="sw")
+        self._label(brand, "Local-first development", 11, color=self.ui.text_subtle).grid(
+            row=1, column=1, sticky="nw"
         )
-        sessions_card.grid(row=0, column=0, padx=(0, 6), sticky="ew")
-        self._sessions_stat = ctk.CTkLabel(
-            sessions_card, text="0", text_color=TEXT, font=ctk.CTkFont(size=20, weight="bold")
-        )
-        self._sessions_stat.grid(row=0, column=0, padx=12, pady=(10, 0), sticky="w")
-        ctk.CTkLabel(
-            sessions_card, text="saved chats", text_color=TEXT3, font=ctk.CTkFont(size=10)
-        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
-        tools_card = ctk.CTkFrame(
-            strip, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER
-        )
-        tools_card.grid(row=0, column=1, padx=(6, 0), sticky="ew")
-        self._tools_stat = ctk.CTkLabel(
-            tools_card, text="0", text_color=TEXT, font=ctk.CTkFont(size=20, weight="bold")
-        )
-        self._tools_stat.grid(row=0, column=0, padx=12, pady=(10, 0), sticky="w")
-        ctk.CTkLabel(
-            tools_card, text="available tools", text_color=TEXT3, font=ctk.CTkFont(size=10)
-        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
-        _btn(
-            hero,
-            "＋  New Chat",
+
+        self._button(
+            self.sidebar,
+            "+  New chat",
             self.new_chat,
-            h=40,
-            fg=PURPLE_DIM,
-            hov=PURPLE,
-            radius=12,
-            text_color=TEXT,
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-        ).grid(row=2, column=0, padx=12, pady=(0, 12), sticky="ew")
-        hero.grid_slaves(row=2, column=0)[0].grid_configure(row=3, pady=(0, 12))
+            height=42,
+            fg_color=self.ui.accent,
+            hover_color=self.ui.accent_hover,
+            text_color=self.ui.accent_text,
+            radius=10,
+            font=self._font(14, "bold"),
+        ).grid(row=1, column=0, padx=18, pady=(0, 16), sticky="ew")
 
+        if not hasattr(self, "_search_trace_registered"):
+            self._search_var.trace_add("write", lambda *_: self.refresh_sidebar())
+            self._search_trace_registered = True
         search = ctk.CTkEntry(
             self.sidebar,
             textvariable=self._search_var,
-            placeholder_text="Search saved chats...",
-            fg_color=CARD,
-            border_color=BORDER,
+            placeholder_text="Search chats",
+            fg_color=self.ui.sidebar_alt,
+            border_color=self.ui.border,
             border_width=1,
-            text_color=TEXT2,
-            placeholder_text_color=TEXT3,
-            corner_radius=12,
-            height=38,
-            font=ctk.CTkFont(family="Segoe UI", size=12),
+            text_color=self.ui.text,
+            placeholder_text_color=self.ui.text_subtle,
+            corner_radius=10,
+            height=36,
+            font=self._font(12),
         )
-        search.grid(row=1, column=0, padx=14, pady=(0, 10), sticky="ew")
-        self._search_var.trace_add("write", lambda *_: self.refresh_sidebar())
+        search.grid(row=2, column=0, padx=18, pady=(0, 14), sticky="ew")
 
-        insights = ctk.CTkFrame(
-            self.sidebar, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER
+        self._label(self.sidebar, "Recent", 12, "bold", color=self.ui.text_muted, anchor="w").grid(
+            row=3, column=0, padx=20, pady=(0, 4), sticky="ew"
         )
-        insights.grid(row=2, column=0, padx=14, pady=(0, 10), sticky="ew")
-        insights.grid_columnconfigure(0, weight=1)
-        _label(insights, "Session flow", 10, "bold", color=TEXT3, anchor="w").grid(
-            row=0, column=0, padx=12, pady=(10, 4), sticky="ew"
-        )
-        _label(
-            insights,
-            "Search your recent work, pick up where you left off, and keep the chat loop tidy.",
-            12,
-            color=TEXT2,
-            anchor="w",
-            wraplength=244,
-            justify="left",
-        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="ew")
-
-        ctk.CTkLabel(
-            self.sidebar,
-            text="RECENT CHATS",
-            font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
-            text_color=TEXT3,
-            anchor="w",
-        ).grid(row=3, column=0, padx=18, pady=(0, 4), sticky="w")
 
         self.session_list = ctk.CTkScrollableFrame(
             self.sidebar,
             fg_color="transparent",
             corner_radius=0,
-            scrollbar_button_color=BORDER2,
+            scrollbar_button_color=self.ui.border_strong,
+            scrollbar_button_hover_color=self.ui.accent_soft,
         )
-        self.session_list.grid(row=4, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        self.session_list.grid(row=4, column=0, sticky="nsew", padx=8, pady=(0, 10))
         self.session_list.grid_columnconfigure(0, weight=1)
 
-        footer = ctk.CTkFrame(
-            self.sidebar, fg_color=SURFACE2, corner_radius=14, border_width=1, border_color=BORDER
-        )
-        footer.grid(row=5, column=0, padx=14, pady=(0, 14), sticky="ew")
+        nav = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        nav.grid(row=5, column=0, padx=18, pady=(0, 14), sticky="ew")
+        nav.grid_columnconfigure(0, weight=1)
+        self._sidebar_nav(nav, "Projects", "Project grouping is not configured yet.", 0)
+        self._sidebar_nav(nav, "Artifacts", "Generated outputs will appear in the workspace rail.", 1)
+        self._sidebar_nav(nav, "Settings", "Provider, model, and appearance controls.", 2)
+
+        footer = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        footer.grid(row=6, column=0, padx=18, pady=(0, 16), sticky="ew")
         footer.grid_columnconfigure(0, weight=1)
-        _label(footer, "Quick Tips", 10, "bold", color=TEXT3, anchor="w").grid(
-            row=0, column=0, padx=12, pady=(10, 2), sticky="ew"
-        )
-        _label(
+        self._label(
             footer,
-            "Use Ctrl+N for a new chat, Ctrl+P for prompts, and Esc to interrupt generation.",
+            "Local",
             12,
-            color=TEXT2,
+            "bold",
+            color=self.ui.success,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        self._label(
+            footer,
+            f"{self.provider_name} - {self.model_name}",
+            10,
+            color=self.ui.text_subtle,
             anchor="w",
             wraplength=240,
-            justify="left",
-        ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="ew")
+        ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
+        tk.Frame(self.sidebar, width=1, bg=self.ui.border).place(
+            relx=1.0, rely=0, relheight=1, x=-1
+        )
         self.refresh_sidebar()
-        self._apply_shell_metrics()
 
-    def _make_session_item(self, s: dict):
-        active = s.get("session_id", s["name"]) == self._session_id
+    def _sidebar_nav(self, parent, title: str, description: str, row: int):
+        command = self.show_settings if title == "Settings" else None
+        frame = ctk.CTkFrame(
+            parent,
+            fg_color="transparent",
+            corner_radius=10,
+            border_width=1,
+            border_color=self.ui.border,
+        )
+        frame.grid(row=row, column=0, sticky="ew", pady=(0, 8))
+        frame.grid_columnconfigure(0, weight=1)
+        self._label(frame, title, 13, "bold", anchor="w").grid(
+            row=0, column=0, padx=12, pady=(9, 0), sticky="ew"
+        )
+        self._label(
+            frame,
+            description,
+            10,
+            color=self.ui.text_subtle,
+            anchor="w",
+            wraplength=230,
+            justify="left",
+        ).grid(row=1, column=0, padx=12, pady=(1, 9), sticky="ew")
+        if command:
+            for widget in [frame] + list(frame.winfo_children()):
+                widget.bind("<Button-1>", lambda _event: command())
+                widget.configure(cursor="hand2")
+
+    def refresh_sidebar(self):
+        for widget in self.session_list.winfo_children():
+            widget.destroy()
+        query = self._search_var.get().lower().strip()
+        sessions = session_mgr.list_sessions(include_auto=True)
+        if query:
+            sessions = [session for session in sessions if query in self._session_title(session).lower()]
+        if not sessions:
+            message = "No matches." if query else "No history yet."
+            self._label(self.session_list, message, 12, color=self.ui.text_subtle).grid(
+                padx=14, pady=12, sticky="w"
+            )
+            return
+        for session in sessions[:60]:
+            self._make_session_item(session)
+
+    def _make_session_item(self, session: dict):
+        active = session.get("session_id", session["name"]) == self._session_id
         frame = ctk.CTkFrame(
             self.session_list,
-            fg_color=CARD if active else SURFACE2,
-            corner_radius=14,
-            border_width=1,
-            border_color=PURPLE_DIM if active else BORDER,
+            fg_color=self.ui.selected if active else "transparent",
+            corner_radius=10,
+            border_width=1 if active else 0,
+            border_color=self.ui.border,
         )
-        frame.grid(sticky="ew", pady=4, padx=4)
-        frame.grid_columnconfigure(1, weight=1)
+        frame.grid(sticky="ew", pady=2, padx=4)
+        frame.grid_columnconfigure(0, weight=1)
 
-        rail = ctk.CTkFrame(
-            frame, width=6, fg_color=PURPLE if active else SURFACE2, corner_radius=8
-        )
-        rail.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=(8, 10), pady=8)
-
-        ctk.CTkLabel(
+        self._label(
             frame,
-            text="💬",
-            width=22,
-            text_color=PURPLE if active else TEXT3,
-            font=ctk.CTkFont(size=13),
-        ).grid(row=0, column=1, padx=(0, 6), pady=(10, 2), sticky="w")
-        ctk.CTkLabel(
-            frame,
-            text=self._session_title(s),
+            self._session_title(session),
+            12,
+            "bold" if active else "normal",
+            color=self.ui.text if active else self.ui.text_muted,
             anchor="w",
             justify="left",
-            wraplength=194,
-            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold" if active else "normal"),
-            text_color=TEXT if active else TEXT2,
-        ).grid(row=0, column=2, padx=(0, 10), pady=(10, 2), sticky="ew")
-        ctk.CTkLabel(
+            wraplength=220,
+        ).grid(row=0, column=0, padx=12, pady=(9, 1), sticky="ew")
+        self._label(
             frame,
-            text=self._format_date(s["updated"]),
+            self._format_date(session["updated"]),
+            10,
+            color=self.ui.accent if active else self.ui.text_subtle,
             anchor="w",
-            font=ctk.CTkFont(family="Segoe UI", size=10),
-            text_color=PURPLE if active else TEXT3,
-        ).grid(row=1, column=2, padx=(0, 10), pady=(0, 10), sticky="w")
+        ).grid(row=1, column=0, padx=12, pady=(0, 9), sticky="w")
 
-        fn = s["filename"]
+        filename = session["filename"]
 
-        def _click(e=None, f=fn):
-            self.load_session(f)
+        def click(_event=None, selected_file=filename):
+            self.load_session(selected_file)
 
-        def _enter(e, fr=frame):
+        def enter(_event=None, item=frame):
             if not active:
-                fr.configure(fg_color=CARD_HOV)
+                item.configure(fg_color=self.ui.surface_hover)
 
-        def _leave(e, fr=frame):
-            fr.configure(fg_color=CARD if active else SURFACE2)
+        def leave(_event=None, item=frame):
+            item.configure(fg_color=self.ui.selected if active else "transparent")
 
-        for w in [frame] + list(frame.winfo_children()):
-            try:
-                w.bind("<Button-1>", _click)
-                w.bind("<Enter>", _enter)
-                w.bind("<Leave>", _leave)
-                w.configure(cursor="hand2")
-            except Exception:
-                pass
+        for widget in [frame] + list(frame.winfo_children()):
+            widget.bind("<Button-1>", click)
+            widget.bind("<Enter>", enter)
+            widget.bind("<Leave>", leave)
+            widget.configure(cursor="hand2")
 
     def _build_chat_area(self):
-        self._chat = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        self._chat = ctk.CTkFrame(self, fg_color=self.ui.main, corner_radius=0)
         self._chat.grid(row=1, column=1, sticky="nsew")
         self._chat.grid_columnconfigure(0, weight=1)
         self._chat.grid_rowconfigure(1, weight=1)
 
-        hero = ctk.CTkFrame(
-            self._chat, fg_color=SURFACE, corner_radius=22, border_width=1, border_color=BORDER
-        )
-        hero.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 14))
-        hero.grid_columnconfigure(0, weight=1)
-        _label(hero, "Focused build workspace", 11, "bold", color=TEXT3, anchor="w").grid(
-            row=0, column=0, padx=18, pady=(14, 4), sticky="ew"
-        )
-        _label(
-            hero,
-            "Ask, inspect, iterate, and keep momentum without fighting the interface.",
-            18,
-            "bold",
-            color=TEXT,
-            anchor="w",
-        ).grid(row=1, column=0, padx=18, pady=(0, 4), sticky="ew")
-        self._hero_subtitle = _label(hero, "", 12, color=TEXT2, anchor="w")
-        self._hero_subtitle.grid(row=2, column=0, padx=18, pady=(0, 10), sticky="ew")
-        quick = build_actions_text(get_all_actions())
-        _label(
-            hero,
-            quick or "/help  —  No actions registered yet",
-            12,
-            color=TEXT2,
-            anchor="w",
-            wraplength=820,
-            justify="left",
-        ).grid(row=3, column=0, padx=18, pady=(0, 10), sticky="ew")
+        welcome = ctk.CTkFrame(self._chat, fg_color="transparent")
+        welcome.grid(row=0, column=0, sticky="ew", padx=42, pady=(26, 14))
+        welcome.grid_columnconfigure(0, weight=1)
 
-        starters = ctk.CTkFrame(hero, fg_color="transparent")
-        starters.grid(row=4, column=0, padx=18, pady=(0, 16), sticky="w")
+        self._label(welcome, "What do you want to build?", 30, "bold", anchor="center").grid(
+            row=0, column=0, sticky="ew"
+        )
+        self._label(
+            welcome,
+            "Dan works locally with your projects, tools, and saved context.",
+            14,
+            color=self.ui.text_muted,
+            anchor="center",
+        ).grid(row=1, column=0, pady=(6, 14), sticky="ew")
+
+        starters = ctk.CTkFrame(welcome, fg_color="transparent")
+        starters.grid(row=2, column=0)
         prompts = [
-            (
-                "Review this repo",
-                "Review this repository and tell me the highest-value next improvements.",
-            ),
-            ("Plan a feature", "Help me plan the next feature with clear implementation steps."),
-            ("Fix a bug", "Help me debug a failing workflow and propose the smallest safe fix."),
+            ("Review repo", "Review this repository and identify the highest-risk issues."),
+            ("Plan feature", "Help me plan a production-grade feature in this codebase."),
+            ("Debug issue", "Help me debug a failing workflow with evidence before fixes."),
         ]
-        for index, (label_text, prompt_text) in enumerate(prompts):
-            _btn(
+        for index, (label, prompt) in enumerate(prompts):
+            self._button(
                 starters,
-                label_text,
-                lambda value=prompt_text: self._inject_prompt(value),
-                h=30,
-                fg=CARD,
-                hov=CARD_HOV,
+                label,
+                lambda value=prompt: self._inject_prompt(value),
+                height=30,
                 radius=15,
-                text_color=TEXT2,
-                font=ctk.CTkFont(family="Segoe UI", size=11),
+                border=True,
+                text_color=self.ui.text_muted,
             ).grid(row=0, column=index, padx=(0, 8))
 
         board = ctk.CTkFrame(
-            self._chat, fg_color=SURFACE2, corner_radius=22, border_width=1, border_color=BORDER
+            self._chat,
+            fg_color=self.ui.background,
+            corner_radius=18,
+            border_width=1,
+            border_color=self.ui.border,
         )
-        board.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 12))
+        board.grid(row=1, column=0, sticky="nsew", padx=34, pady=(0, 12))
         board.grid_columnconfigure(0, weight=1)
         board.grid_rowconfigure(0, weight=1)
 
         self.messages_container = ctk.CTkScrollableFrame(
             board,
-            fg_color=BG,
-            corner_radius=16,
-            scrollbar_button_color=BORDER2,
-            scrollbar_button_hover_color=PURPLE_DIM,
+            fg_color="transparent",
+            corner_radius=14,
+            scrollbar_button_color=self.ui.border_strong,
+            scrollbar_button_hover_color=self.ui.accent_soft,
         )
         self.messages_container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         self.messages_container.grid_columnconfigure(0, weight=1)
@@ -452,148 +615,690 @@ class DanModernGUI(DanGUI):
         self._build_input_area()
 
     def _build_input_area(self):
-        outer = ctk.CTkFrame(self._chat, fg_color="transparent", corner_radius=0)
-        outer.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 18))
+        outer = ctk.CTkFrame(self._chat, fg_color="transparent")
+        outer.grid(row=2, column=0, sticky="ew", padx=34, pady=(0, 22))
         outer.grid_columnconfigure(0, weight=1)
 
         composer = ctk.CTkFrame(
-            outer, fg_color=SURFACE, corner_radius=20, border_width=1, border_color=BORDER2
+            outer,
+            fg_color=self.ui.surface,
+            corner_radius=18,
+            border_width=1,
+            border_color=self.ui.border_strong,
         )
         composer.grid(row=0, column=0, sticky="ew")
-        composer.grid_columnconfigure(1, weight=1)
+        composer.grid_columnconfigure(0, weight=1)
 
-        rail = ctk.CTkFrame(composer, fg_color="transparent")
-        rail.grid(row=0, column=0, padx=(14, 10), pady=12, sticky="ns")
-        rail.grid_rowconfigure((0, 1, 2), weight=1)
-        _btn(rail, "📎", self.attach_file, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(
-            row=0, column=0, pady=(0, 8)
-        )
-        _btn(rail, "⚙", self.show_settings, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(
-            row=1, column=0, pady=(0, 8)
-        )
-        _btn(rail, "⌘", self.show_actions, w=38, h=38, fg=CARD, hov=CARD_HOV, radius=19).grid(
-            row=2, column=0
-        )
-
-        text_wrap = ctk.CTkFrame(composer, fg_color="transparent")
-        text_wrap.grid(row=0, column=1, sticky="ew", pady=12)
-        text_wrap.grid_columnconfigure(0, weight=1)
-        _label(text_wrap, "Message Dan", 10, "bold", color=TEXT3, anchor="w").grid(
-            row=0, column=0, sticky="ew", padx=(0, 0), pady=(0, 6)
-        )
         self.input_box = ctk.CTkTextbox(
-            text_wrap,
-            height=82,
-            fg_color=BG,
-            border_width=1,
-            border_color=BORDER,
-            corner_radius=16,
-            font=ctk.CTkFont(family="Segoe UI", size=14),
-            text_color=TEXT,
+            composer,
+            height=86,
+            fg_color=self.ui.input_bg,
+            border_width=0,
+            corner_radius=14,
+            font=self._font(14),
+            text_color=self.ui.text,
             wrap="word",
         )
-        self.input_box.grid(row=1, column=0, sticky="ew")
+        self.input_box.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
         self.input_box.bind("<Return>", self._handle_enter)
-        self.input_box.bind("<Shift-Return>", lambda e: None)
-        _label(
-            text_wrap,
-            "Shift+Enter for a new line · messages stream live with tool progress",
-            11,
-            color=TEXT3,
-            anchor="w",
-        ).grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        self.input_box.bind("<Shift-Return>", lambda _event: None)
 
-        right = ctk.CTkFrame(composer, fg_color="transparent")
-        right.grid(row=0, column=2, padx=(10, 14), pady=12, sticky="ns")
-        self.send_btn = ctk.CTkButton(
-            right,
-            text="Send",
-            width=90,
-            height=42,
-            fg_color=PURPLE,
-            hover_color=PURPLE_HOV,
-            corner_radius=18,
-            font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            command=self.send_message,
-        )
-        self.send_btn.grid(row=0, column=0, pady=(22, 14))
+        bottom = ctk.CTkFrame(composer, fg_color="transparent")
+        bottom.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
+        bottom.grid_columnconfigure(2, weight=1)
+
+        self._button(
+            bottom,
+            "Attach",
+            self.attach_file,
+            width=72,
+            height=32,
+            border=True,
+            text_color=self.ui.text_muted,
+        ).grid(row=0, column=0, padx=(0, 8))
+        self._button(
+            bottom,
+            "Actions",
+            self.show_actions,
+            width=78,
+            height=32,
+            border=True,
+            text_color=self.ui.text_muted,
+        ).grid(row=0, column=1, padx=(0, 8))
 
         self.model_var = tk.StringVar(value=self.model_name)
         ctk.CTkOptionMenu(
-            right,
+            bottom,
             variable=self.model_var,
-            values=[
-                "qwen2.5-coder:14b",
-                "qwen2.5-coder:7b",
-                "qwen2.5-coder:32b",
-                "llama3.1:8b",
-                "deepseek-coder-v2:16b",
-                "claude-sonnet-4-6",
-                "claude-opus-4-20250514",
-                "gpt-4o",
-                "gpt-4o-mini",
-            ],
+            values=MODEL_CHOICES,
             width=210,
-            height=36,
-            corner_radius=12,
-            fg_color=CARD,
-            button_color=BORDER2,
-            button_hover_color=PURPLE_DIM,
-            text_color=TEXT2,
-            font=ctk.CTkFont(family="Segoe UI", size=12),
+            height=32,
+            corner_radius=10,
+            fg_color=self.ui.surface_alt,
+            button_color=self.ui.border_strong,
+            button_hover_color=self.ui.accent_soft,
+            text_color=self.ui.text_muted,
+            font=self._font(12),
             command=self.change_model,
-        ).grid(row=1, column=0)
+        ).grid(row=0, column=3, padx=(8, 8))
+
+        self.send_btn = ctk.CTkButton(
+            bottom,
+            text="Send",
+            width=78,
+            height=34,
+            fg_color=self.ui.accent,
+            hover_color=self.ui.accent_hover,
+            text_color=self.ui.accent_text,
+            corner_radius=10,
+            font=self._font(13, "bold"),
+            command=self.send_message,
+        )
+        self.send_btn.grid(row=0, column=4)
+
+    def _build_right_rail(self):
+        rail = ctk.CTkFrame(self, width=self.RIGHT_RAIL_W, fg_color=self.ui.main, corner_radius=0)
+        rail.grid(row=1, column=2, sticky="nsew")
+        rail.grid_propagate(False)
+        rail.grid_columnconfigure(0, weight=1)
+        rail.grid_rowconfigure(5, weight=1)
+
+        tk.Frame(rail, width=1, bg=self.ui.border).place(x=0, y=0, relheight=1)
+
+        self._label(rail, "Workspace", 13, "bold", color=self.ui.text_muted, anchor="w").grid(
+            row=0, column=0, padx=18, pady=(14, 6), sticky="ew"
+        )
+
+        panes = [
+            ("Files", "Attach or inspect project files through chat.", "Available"),
+            ("Tools", "View registered local tools and actions.", "Available"),
+            ("Preview", "No rendered preview is open.", "Empty"),
+            ("Terminal", "Commands run through secured chat tools.", "Guarded"),
+        ]
+        for index, pane in enumerate(panes, start=1):
+            self._workspace_button(rail, *pane, row=index)
+
+        footer = ctk.CTkFrame(rail, fg_color="transparent")
+        footer.grid(row=5, column=0, sticky="sew", padx=18, pady=(6, 12))
+        self._label(
+            footer,
+            "Pane content opens only when backed by a real workflow.",
+            9,
+            color=self.ui.text_subtle,
+            anchor="w",
+            wraplength=218,
+            justify="left",
+        ).grid(row=0, column=0, sticky="ew")
+        self._select_workspace_pane(self._workspace_pane)
+
+    def _workspace_button(self, parent, title: str, description: str, status: str, row: int):
+        frame = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=12)
+        frame.grid(row=row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        frame.grid_columnconfigure(0, weight=1)
+        self._label(frame, title, 13, "bold", anchor="w").grid(
+            row=0, column=0, padx=12, pady=(7, 0), sticky="ew"
+        )
+        self._label(
+            frame,
+            description,
+            9,
+            color=self.ui.text_subtle,
+            anchor="w",
+            wraplength=210,
+        ).grid(row=1, column=0, padx=12, pady=(1, 0), sticky="ew")
+        self._label(frame, status, 9, "bold", color=self.ui.accent, anchor="w").grid(
+            row=2, column=0, padx=12, pady=(0, 7), sticky="ew"
+        )
+
+        def click(_event=None, pane=title):
+            self._select_workspace_pane(pane)
+
+        for widget in [frame] + list(frame.winfo_children()):
+            widget.bind("<Button-1>", click)
+            widget.configure(cursor="hand2")
+        self._workspace_buttons[title] = frame
+
+    def _select_workspace_pane(self, pane: str):
+        self._workspace_pane = pane
+        for title, button in self._workspace_buttons.items():
+            button.configure(fg_color=self.ui.selected if title == pane else "transparent")
 
     def _build_status_bar(self):
-        bar = ctk.CTkFrame(self, height=34, fg_color=SURFACE, corner_radius=0)
-        bar.grid(row=2, column=1, sticky="ew")
-        bar.grid_columnconfigure(1, weight=1)
+        bar = ctk.CTkFrame(self, height=34, fg_color=self.ui.main, corner_radius=0)
+        bar.grid(row=2, column=1, columnspan=2, sticky="ew")
+        bar.grid_columnconfigure(2, weight=1)
         bar.grid_propagate(False)
+        tk.Frame(bar, height=1, bg=self.ui.border).place(relx=0, rely=0, relwidth=1)
 
-        self._status_lbl = ctk.CTkLabel(
-            bar,
-            text=f"  {self.provider_name} · {self.model_name}",
-            font=ctk.CTkFont(family="Segoe UI", size=10),
-            text_color=TEXT3,
-            anchor="w",
-        )
-        self._status_lbl.grid(row=0, column=0, sticky="w", padx=10)
+        self._status_dot = self._label(bar, "●", 11, color=self.ui.success)
+        self._status_dot.grid(row=0, column=0, padx=(16, 6), sticky="w")
+        self._status_txt = self._label(bar, "Ready", 10, color=self.ui.text_muted)
+        self._status_txt.grid(row=0, column=1, sticky="w")
 
-        center = ctk.CTkLabel(
+        shortcuts = self._label(
             bar,
-            text="Ctrl+N New · Ctrl+P Prompts · Ctrl+, Settings · Esc Interrupt",
-            font=ctk.CTkFont(family="Segoe UI", size=9),
-            text_color=TEXT3,
+            "Ctrl+N New - Ctrl+P Prompts - Ctrl+, Settings - Esc Interrupt",
+            9,
+            color=self.ui.text_subtle,
             anchor="center",
         )
-        center.grid(row=0, column=1, sticky="ew")
+        shortcuts.grid(row=0, column=2, sticky="ew")
 
-        self._token_lbl = ctk.CTkLabel(
+        self._status_lbl = self._label(
             bar,
-            text="",
-            font=ctk.CTkFont(family="Segoe UI", size=10),
-            text_color=TEXT3,
+            f"{self.provider_name} - {self.model_name}",
+            10,
+            color=self.ui.text_subtle,
             anchor="e",
         )
-        self._token_lbl.grid(row=0, column=2, sticky="e", padx=10)
+        self._status_lbl.grid(row=0, column=3, sticky="e", padx=(8, 12))
 
-    def change_model(self, model: str):
-        super().change_model(model)
-        self._provider_lbl.configure(text=f"  {self.provider_name}  ")
-        self._apply_shell_metrics()
+        self._token_lbl = self._label(bar, "", 10, color=self.ui.text_subtle, anchor="e")
+        self._token_lbl.grid(row=0, column=4, sticky="e", padx=(0, 14))
+
+    def _inject_prompt(self, text: str):
+        self.input_box.delete("1.0", "end")
+        self.input_box.insert("1.0", text)
+        self.input_box.focus()
+
+    def add_message(self, role: str, content: str):
+        if role == "user":
+            self._add_user_message(content)
+        elif role == "error":
+            self._add_error_message(content)
+        else:
+            self._add_assistant_message(content)
+        self._scroll_to_bottom()
+
+    def _add_user_message(self, content: str):
+        outer = ctk.CTkFrame(self.messages_container, fg_color="transparent")
+        outer.grid(sticky="ew", pady=(0, 10))
+        outer.grid_columnconfigure(0, weight=1)
+
+        bubble = ctk.CTkFrame(
+            outer,
+            fg_color=self.ui.user_bubble,
+            corner_radius=16,
+            border_width=1,
+            border_color=self.ui.border,
+        )
+        bubble.grid(row=0, column=1, sticky="e")
+        bubble.grid_columnconfigure(0, weight=1)
+
+        textbox = self._message_textbox(bubble, content, self.ui.user_text, max_height=420)
+        textbox.grid(row=0, column=0, padx=14, pady=(10, 4), sticky="ew")
+        self._label(
+            bubble,
+            timestamp_label(),
+            10,
+            color=self.ui.text_subtle,
+            anchor="e",
+        ).grid(row=1, column=0, padx=14, pady=(0, 8), sticky="e")
+        self._attach_copy_hover(bubble, textbox)
+
+    def _add_assistant_message(self, content: str):
+        outer = ctk.CTkFrame(self.messages_container, fg_color="transparent")
+        outer.grid(sticky="ew", pady=(0, 10))
+        outer.grid_columnconfigure(1, weight=1)
+        outer.grid_columnconfigure(2, minsize=84, weight=0)
+
+        avatar = ctk.CTkFrame(
+            outer,
+            width=32,
+            height=32,
+            fg_color=self.ui.accent_soft,
+            corner_radius=16,
+            border_width=1,
+            border_color=self.ui.border,
+        )
+        avatar.grid(row=0, column=0, padx=(0, 10), sticky="n", pady=(4, 0))
+        avatar.grid_propagate(False)
+        self._label(avatar, "D", 14, "bold", color=self.ui.accent).place(
+            relx=0.5, rely=0.5, anchor="center"
+        )
+
+        bubble = ctk.CTkFrame(
+            outer,
+            fg_color=self.ui.assistant_bubble,
+            corner_radius=16,
+            border_width=1,
+            border_color=self.ui.border,
+        )
+        bubble.grid(row=0, column=1, sticky="ew")
+        bubble.grid_columnconfigure(0, weight=1)
+
+        textbox = self._message_textbox(bubble, content, self.ui.text, max_height=520)
+        textbox.grid(row=0, column=0, padx=14, pady=(10, 4), sticky="ew")
+        self._label(
+            bubble,
+            timestamp_label(),
+            10,
+            color=self.ui.text_subtle,
+            anchor="w",
+        ).grid(row=1, column=0, padx=14, pady=(0, 8), sticky="w")
+        self._attach_copy_hover(bubble, textbox)
+
+    def _message_textbox(self, parent, content: str, text_color: str, max_height: int):
+        textbox = ctk.CTkTextbox(
+            parent,
+            fg_color="transparent",
+            border_width=0,
+            corner_radius=0,
+            wrap="word",
+            font=self._font(14),
+            text_color=text_color,
+            activate_scrollbars=False,
+        )
+        textbox.insert("1.0", content)
+        textbox.configure(state="disabled")
+        lines = int(textbox.index("end-1c").split(".")[0])
+        textbox.configure(height=min(max(lines * 22 + 16, 46), max_height))
+        return textbox
+
+    def _add_error_message(self, content: str):
+        outer = ctk.CTkFrame(self.messages_container, fg_color="transparent")
+        outer.grid(sticky="ew", pady=(0, 10))
+        outer.grid_columnconfigure(0, weight=1)
+        bubble = ctk.CTkFrame(
+            outer,
+            fg_color=self.ui.surface,
+            corner_radius=14,
+            border_width=1,
+            border_color=self.ui.error,
+        )
+        bubble.grid(row=0, column=0, sticky="ew")
+        self._label(
+            bubble,
+            f"Warning: {content}",
+            13,
+            color=self.ui.error,
+            anchor="w",
+            wraplength=760,
+        ).grid(padx=14, pady=10, sticky="ew")
+
+    def _attach_copy_hover(self, bubble, textbox):
+        def copy_text():
+            text = textbox.get("1.0", "end-1c")
+            self.clipboard_clear()
+            self.clipboard_append(text)
+
+        copy_button = ctk.CTkButton(
+            bubble,
+            text="Copy",
+            width=48,
+            height=24,
+            fg_color="transparent",
+            hover_color=self.ui.surface_hover,
+            text_color=self.ui.text_subtle,
+            corner_radius=8,
+            font=self._font(11),
+            command=copy_text,
+        )
+        copy_button.place(relx=1.0, rely=0.0, anchor="ne", x=-8, y=6)
+        copy_button.place_forget()
+
+        def show(_event=None):
+            copy_button.place(relx=1.0, rely=0.0, anchor="ne", x=-8, y=6)
+
+        def hide(_event=None):
+            copy_button.place_forget()
+
+        for widget in [bubble, textbox]:
+            widget.bind("<Enter>", show)
+            widget.bind("<Leave>", hide)
+
+    def send_message(self):
+        text = self.input_box.get("1.0", "end-1c").strip()
+        if not text or self.is_processing:
+            return
+
+        self.input_box.delete("1.0", "end")
+        self.add_message("user", text)
+        self.is_processing = True
+        self.send_btn.configure(state="disabled", fg_color=self.ui.accent_soft)
+        self._status_dot.configure(text_color=self.ui.warning)
+        self._status_txt.configure(text="Generating...")
+
+        bubble = ModernLiveBubble(self.messages_container, self.ui, self._font)
+        self._scroll_to_bottom()
+
+        def stream_cb(chunk):
+            self.after(0, lambda value=chunk: bubble.append_text(value))
+            self.after(10, self._scroll_to_bottom)
+
+        def progress_cb(event, message, data):
+            if event == "tool_start":
+                self.after(0, lambda value=message: bubble.add_tool_line(f"Tool: {value}"))
+                self.after(10, self._scroll_to_bottom)
+            elif event == "tool_done" and message:
+                self.after(0, lambda value=message: bubble.add_tool_line(f"Done: {value}"))
+                self.after(10, self._scroll_to_bottom)
+
+        def process():
+            try:
+                response, self.messages = run_agent_loop(
+                    text,
+                    self.messages,
+                    self.provider,
+                    stream_callback=stream_cb,
+                    on_progress=progress_cb,
+                )
+                self.after(0, lambda: bubble.finish(response))
+            except AgentInterrupted:
+                self.after(0, lambda: bubble.finish("Paused - type /resume to continue."))
+            except Exception as exc:
+                self.after(0, lambda error=str(exc): bubble.finish(f"Error: {error}"))
+            finally:
+                self.after(0, self._finish_processing)
+
+        threading.Thread(target=process, daemon=True).start()
 
     def _finish_processing(self):
-        super()._finish_processing()
-        self._provider_lbl.configure(text=f"  {self.provider_name}  ")
-        self._apply_shell_metrics()
+        self.is_processing = False
+        self.send_btn.configure(state="normal", fg_color=self.ui.accent)
+        self._status_dot.configure(text_color=self.ui.success)
+        self._status_txt.configure(text="Ready")
+        self._update_tokens()
+        self.input_box.focus()
+        self._scroll_to_bottom()
+
+        def save_session():
+            session_mgr.auto_save(
+                self.messages[:], self.provider_name, self.model_name, self._session_id
+            )
+            self.after(0, self.refresh_sidebar)
+
+        threading.Thread(target=save_session, daemon=True).start()
+
+    def _update_tokens(self):
+        count = estimate_tokens(self.messages)
+        self._token_lbl.configure(text=f"~{count:,} tokens" if count else "")
 
     def new_chat(self):
-        super().new_chat()
-        self._apply_shell_metrics()
+        if self.is_processing:
+            return
+        import uuid
+
+        self.messages = []
+        self._session_id = str(uuid.uuid4())[:8]
+        self._clear_chat()
+        self._update_tokens()
+        self.add_message(
+            "assistant",
+            f"Hey. I'm {APP_NAME}, your local-first development assistant.\n"
+            "Ask me to inspect code, plan a change, debug a workflow, or build something.",
+        )
+        self.refresh_sidebar()
 
     def load_session(self, filename: str):
         super().load_session(filename)
-        self._apply_shell_metrics()
+        self._status_lbl.configure(text=f"{self.provider_name} - {self.model_name}")
+
+    def _load_history(self) -> bool:
+        try:
+            saves = sorted(
+                (USER_DATA_DIR / "sessions").glob("_auto_*.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            if not saves:
+                return False
+            data = json.loads(saves[0].read_text(encoding="utf-8"))
+            messages = data.get("messages", [])
+            if not messages:
+                return False
+            self.messages = messages
+            self._session_id = data.get("session_id", self._session_id)
+            self._render_messages(messages)
+            self._update_tokens()
+            return True
+        except Exception:
+            return False
+
+    def _render_messages(self, messages: list):
+        for message in messages:
+            role = message.get("role", "")
+            content = message.get("content", "")
+            if role == "user" and isinstance(content, str) and content.strip():
+                self.add_message("user", content)
+            elif role == "assistant":
+                text = extract_assistant_text(content)
+                if text:
+                    self.add_message("assistant", text)
+
+    def attach_file(self):
+        from tkinter import filedialog
+
+        filename = filedialog.askopenfilename()
+        if filename:
+            self.input_box.insert("end", f"\n[Attached: {Path(filename).name}]")
+
+    def change_model(self, model: str):
+        self.model_name = model
+        self.provider_name = infer_provider_from_model(model)
+        try:
+            self.provider = get_provider(self.provider_name, self.model_name)
+            from api_config import load_config, save_config
+
+            config = load_config()
+            config["provider"] = self.provider_name
+            config.setdefault(self.provider_name, {})["model"] = self.model_name
+            save_config(config)
+            self._model_lbl.configure(text=f"  {model}  ")
+            self._provider_lbl.configure(text=f"  {self.provider_name}  ")
+            self._status_lbl.configure(text=f"{self.provider_name} - {model}")
+        except Exception as exc:
+            self._inline_error(f"Failed to switch model: {exc}")
+
+    def show_settings(self):
+        from api_config import get_secret, load_config, save_config, set_secret
+
+        config = load_config()
+        window = self._popup("Settings", 540, 650)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(0, weight=1)
+
+        scroll = ctk.CTkScrollableFrame(
+            window,
+            fg_color="transparent",
+            scrollbar_button_color=self.ui.border_strong,
+        )
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(0, weight=1)
+        section_grid = {"padx": 24, "sticky": "ew"}
+
+        self._label(scroll, "Settings", 22, "bold").grid(
+            row=0, column=0, pady=(24, 5), **section_grid
+        )
+
+        def section(row: int, title: str):
+            self._label(scroll, title, 10, "bold", color=self.ui.text_subtle, anchor="w").grid(
+                row=row, column=0, pady=(16, 4), **section_grid
+            )
+
+        def entry(row: int, var, **kwargs):
+            ctk.CTkEntry(
+                scroll,
+                textvariable=var,
+                fg_color=self.ui.input_bg,
+                border_color=self.ui.border,
+                text_color=self.ui.text,
+                border_width=1,
+                font=self._font(13),
+                **kwargs,
+            ).grid(row=row, column=0, pady=(0, 4), **section_grid)
+
+        section(1, "APPEARANCE")
+        theme_var = tk.StringVar(value=self._theme_name)
+        ctk.CTkOptionMenu(
+            scroll,
+            variable=theme_var,
+            values=[THEME_DARK, THEME_LIGHT],
+            fg_color=self.ui.surface,
+            button_color=self.ui.border_strong,
+            button_hover_color=self.ui.accent_soft,
+            text_color=self.ui.text,
+            font=self._font(13),
+            corner_radius=8,
+        ).grid(row=2, column=0, pady=(0, 4), **section_grid)
+
+        section(3, "PROVIDER")
+        provider_var = tk.StringVar(value=config.get("provider", "ollama"))
+        ctk.CTkOptionMenu(
+            scroll,
+            variable=provider_var,
+            values=["ollama", "anthropic", "openai", "venice"],
+            fg_color=self.ui.surface,
+            button_color=self.ui.border_strong,
+            button_hover_color=self.ui.accent_soft,
+            text_color=self.ui.text,
+            font=self._font(13),
+            corner_radius=8,
+        ).grid(row=4, column=0, pady=(0, 4), **section_grid)
+
+        section(5, "OLLAMA MODEL")
+        ollama_model = tk.StringVar(value=config.get("ollama", {}).get("model", ""))
+        entry(6, ollama_model, placeholder_text="e.g. qwen2.5-coder:14b")
+
+        section(7, "OLLAMA URL")
+        ollama_url = tk.StringVar(
+            value=config.get("ollama", {}).get("base_url", "http://localhost:11434")
+        )
+        entry(8, ollama_url)
+
+        section(9, "ANTHROPIC API KEY")
+        anthropic_key = tk.StringVar(
+            value=get_secret("anthropic.api_key") or os.environ.get("ANTHROPIC_API_KEY_1", "")
+        )
+        entry(10, anthropic_key, show="*", placeholder_text="sk-ant-...")
+
+        section(11, "OPENAI API KEY")
+        openai_key = tk.StringVar(value=get_secret("openai.api_key"))
+        entry(12, openai_key, show="*", placeholder_text="sk-...")
+
+        section(13, "VENICE API KEY")
+        venice_key = tk.StringVar(value=get_secret("venice.api_key"))
+        entry(14, venice_key, show="*", placeholder_text="venice-...")
+
+        footer = ctk.CTkFrame(
+            window,
+            fg_color=self.ui.surface,
+            corner_radius=0,
+            border_width=1,
+            border_color=self.ui.border,
+        )
+        footer.grid(row=1, column=0, sticky="ew")
+        footer.grid_columnconfigure(0, weight=1)
+        saved_var = tk.StringVar()
+        self._label(footer, "", 11, color=self.ui.success, anchor="w", textvariable=saved_var).grid(
+            row=0, column=0, padx=24, pady=(10, 0), sticky="ew"
+        )
+
+        def save_settings():
+            selected_theme = normalize_theme(theme_var.get())
+            config["provider"] = provider_var.get()
+            config.setdefault("ui", {})["theme"] = selected_theme
+            config.setdefault("ollama", {})["model"] = ollama_model.get().strip()
+            config.setdefault("ollama", {})["base_url"] = ollama_url.get().strip()
+            save_config(config)
+            set_secret("anthropic.api_key", anthropic_key.get())
+            set_secret("openai.api_key", openai_key.get())
+            set_secret("venice.api_key", venice_key.get())
+
+            provider_name = provider_var.get()
+            model_name = ollama_model.get().strip()
+            try:
+                self.provider = get_provider(
+                    provider_name,
+                    model_name if provider_name == "ollama" else self.model_name,
+                )
+                self.provider_name = provider_name
+                if provider_name == "ollama":
+                    self.model_name = model_name
+                    self.model_var.set(model_name)
+                    self._model_lbl.configure(text=f"  {model_name}  ")
+            except Exception:
+                pass
+
+            saved_var.set("Saved")
+            if selected_theme != self._theme_name:
+                window.after(150, window.destroy)
+                self.after(180, lambda: self._set_theme(selected_theme, persist=False))
+            else:
+                self._status_lbl.configure(text=f"{self.provider_name} - {self.model_name}")
+                window.after(900, window.destroy)
+
+        ctk.CTkButton(
+            footer,
+            text="Save settings",
+            height=40,
+            fg_color=self.ui.accent,
+            hover_color=self.ui.accent_hover,
+            corner_radius=10,
+            text_color=self.ui.accent_text,
+            font=self._font(14, "bold"),
+            command=save_settings,
+        ).grid(row=1, column=0, padx=24, pady=(8, 16), sticky="ew")
+
+    def show_actions(self):
+        actions = get_all_actions()
+        lines = "\n".join(f"/{action.name} - {action.description}" for action in actions.values())
+        window = self._popup("Actions", 540, 500)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(1, weight=1)
+        self._label(window, "Available Actions", 18, "bold").grid(
+            row=0, column=0, padx=24, pady=(22, 12), sticky="w"
+        )
+        textbox = ctk.CTkTextbox(
+            window,
+            fg_color=self.ui.input_bg,
+            border_color=self.ui.border,
+            border_width=1,
+            corner_radius=12,
+            font=self._font(13),
+            text_color=self.ui.text,
+            wrap="word",
+        )
+        textbox.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 18))
+        textbox.insert("1.0", lines or "No actions registered.")
+        textbox.configure(state="disabled")
+
+    def _toggle_theme(self):
+        target = THEME_LIGHT if self._theme_name == THEME_DARK else THEME_DARK
+        self._set_theme(target)
+
+    def _set_theme(self, theme_name: str, *, persist: bool = True):
+        if self.is_processing:
+            self._inline_error("Finish the current response before switching theme.")
+            return
+        selected_theme = normalize_theme(theme_name)
+        if persist:
+            from api_config import load_config, save_config
+
+            config = load_config()
+            config.setdefault("ui", {})["theme"] = selected_theme
+            save_config(config)
+        self._theme_name = selected_theme
+        self.ui = get_theme_tokens(selected_theme)
+        self._rebuild_ui_preserving_messages()
+
+    def _rebuild_ui_preserving_messages(self):
+        messages = list(self.messages)
+        for widget in self.winfo_children():
+            widget.destroy()
+        self._workspace_buttons = {}
+        self._build_ui()
+        self._render_messages(messages)
+        self._update_tokens()
+        self.input_box.focus()
+
+    @staticmethod
+    def _session_title(session: dict) -> str:
+        return session_title_from_file(session, USER_DATA_DIR / "sessions")
+
+    @staticmethod
+    def _format_date(timestamp: float) -> str:
+        return format_relative_date(timestamp)
 
 
 def main():

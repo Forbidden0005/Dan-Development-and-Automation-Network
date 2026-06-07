@@ -119,7 +119,8 @@ python Dan.py
 
 When you first launch Dan, you should see:
 
-1. **GUI Mode**: A dark-themed chat window with "Hello! I'm Dan..." message
+1. **GUI Mode**: The supported Claude-inspired Dan desktop shell in dark mode,
+   with a Settings option and quick toggle for light mode
 2. **CLI Mode**: A banner showing your provider, model, and tool count
 
 Try asking:
