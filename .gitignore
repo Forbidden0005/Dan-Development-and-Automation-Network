@@ -41,6 +41,7 @@ bootstrap_admin_key.txt
 # IDE and OS files
 .idea/
 .vscode/
+.vs/
 .DS_Store
 Thumbs.db
 
