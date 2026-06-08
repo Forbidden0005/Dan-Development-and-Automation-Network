@@ -1,11 +1,14 @@
 """Security utilities for Dan AI agent."""
 
+import json
 import logging
 import os
 import ipaddress
 import re
 import shlex
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import List, Optional, Set
 import subprocess
@@ -598,3 +601,112 @@ def validate_redirect_url(current_url: str, location: str, allow_local: bool = F
         raise ValueError("redirect target must be a non-empty URL")
 
     return validate_fetch_url(urljoin(current_url, location.strip()), allow_local=allow_local)
+
+
+# ── Tool Audit Log ────────────────────────────────────────────────────────────
+
+
+class ToolAuditLog:
+    """
+    Persistent append-only audit log for tool invocations.
+
+    Writes one JSON-lines (JSONL) entry per tool call to
+    ``<log_dir>/tool_audit.log``. Each entry records:
+
+    - ``timestamp``    — ISO-8601 UTC timestamp of the invocation
+    - ``tool_name``    — name of the tool invoked
+    - ``input_keys``   — parameter names passed (NOT values; values may be sensitive)
+    - ``safety_level`` — declared safety level of the tool (1, 2, or 3)
+    - ``outcome``      — ``"success"``, ``"error"``, or ``"denied"``
+    - ``duration_ms``  — execution time in milliseconds
+    - ``error``        — truncated error message when outcome is ``"error"``
+
+    The log is append-only. To rotate it, rename or move the file; a new file
+    is created on the next write. The file is plain text and is not encrypted —
+    do not store secret values in tool inputs that flow through here.
+
+    This class is thread-safe: a per-instance lock serialises writes. It is
+    also fail-safe: I/O errors are emitted to the Python logger but never
+    raised to callers, so a missing or unwritable log directory never breaks
+    tool execution.
+
+    Typical usage (singleton per process, created by tool_registry)::
+
+        audit = ToolAuditLog(log_dir=USER_DATA_DIR)
+        audit.record("bash", ["command"], safety_level=3,
+                     outcome="success", duration_ms=42.1)
+    """
+
+    _LOG_FILENAME = "tool_audit.log"
+    _MAX_ERROR_LEN = 300  # truncate errors to avoid leaking large command output
+
+    def __init__(self, log_dir: Path | None = None) -> None:
+        """
+        Args:
+            log_dir: Directory to write ``tool_audit.log`` into.
+                     Defaults to the current working directory if ``None``.
+                     The directory is created on first write if it does not
+                     exist.
+        """
+        self._log_dir: Path = Path(log_dir) if log_dir is not None else Path.cwd()
+        self._lock = threading.Lock()
+
+    # ── Public interface ──────────────────────────────────────────────────────
+
+    @property
+    def log_path(self) -> Path:
+        """Absolute path to the audit log file."""
+        return self._log_dir / self._LOG_FILENAME
+
+    def record(
+        self,
+        tool_name: str,
+        input_keys: list[str],
+        safety_level: int,
+        outcome: str,
+        duration_ms: float,
+        error: str | None = None,
+    ) -> None:
+        """
+        Append one audit entry.
+
+        Args:
+            tool_name:    Name of the tool that was invoked.
+            input_keys:   List of parameter names supplied in the tool input.
+                          Do NOT pass values — they may be sensitive.
+            safety_level: Safety level (1–3) declared for the tool.
+            outcome:      One of ``"success"``, ``"error"``, or ``"denied"``.
+            duration_ms:  Wall-clock execution time in milliseconds.
+            error:        Error message when outcome is ``"error"``.
+                          Truncated to ``_MAX_ERROR_LEN`` characters before writing.
+        """
+        entry: dict = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "tool_name": tool_name,
+            "input_keys": sorted(input_keys),
+            "safety_level": safety_level,
+            "outcome": outcome,
+            "duration_ms": round(duration_ms, 2),
+        }
+        if error is not None:
+            entry["error"] = error[: self._MAX_ERROR_LEN]
+
+        self._write(entry)
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _write(self, entry: dict) -> None:
+        """Serialise *entry* to the log file. Never raises."""
+        try:
+            line = json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
+            with self._lock:
+                self._log_dir.mkdir(parents=True, exist_ok=True)
+                with self.log_path.open("a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+        except Exception:  # noqa: BLE001
+            # Logging failure must never break tool execution.
+            logger.warning(
+                "ToolAuditLog: failed to write entry for tool '%s'",
+                entry.get("tool_name", "?"),
+                exc_info=True,
+            )

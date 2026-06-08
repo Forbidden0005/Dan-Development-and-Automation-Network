@@ -107,6 +107,15 @@ These items are complete enough to count as done and should not remain mixed int
 
 - Created `docs/ARCHITECTURE.md` with module group map, file-by-file ownership table, simplified dependency graph, known coupling issues, and module ownership summary
 
+### Completed In This Security Hardening Pass (2026-06-08 steward passes 5–6)
+
+- Added `ToolAuditLog` class to `security_utils.py`: thread-safe, fail-safe, append-only JSONL audit log; records tool name, input parameter *keys* (not values), safety level, outcome, and duration per invocation
+- Added `safety_level: int` field to `Tool` dataclass in `tool_registry.py` (1=read-only, 2=standard, 3=elevated); `register()` and `register_tool()` accept the new parameter
+- Added confirmation gate to `tool_registry.execute_tool`: `set_confirmation_gate(fn)` installs a consent callback invoked before any Level 3 tool; denials record `"denied"` to the audit log; gate is off by default (backward compatible)
+- Wired `ToolAuditLog` singleton into `execute_tool`: every success, error, and denial is recorded; audit log path is `USER_DATA_DIR / "tool_audit.log"`
+- Added `tests/test_tool_registry_audit.py` with 15 tests covering audit log writes, JSONL validity, truncation, I/O failure silence, gate allow/deny/exception, and integration through `execute_tool`
+- Updated `docs/SECURITY_BOUNDARIES.md`: added Tool Audit Log section, added confirmation gate documentation to Level 3 section, revised Known Gaps
+
 ### Completed In This Security Hardening Pass (2026-06-08 steward pass 5)
 
 - Added `scripts/scan_secrets.py`: git-aware secret scanner for Anthropic, OpenAI, Venice, AWS, and generic credential assignment patterns; exit code 0/1/2; inline `# noqa: scan-secrets` suppression; runs without external dependencies
@@ -234,9 +243,8 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 
 ### Security Hardening
 
-- No audit log — tool invocations are not persisted for review
-- No explicit confirmation gate before Level 3 (shell execution) tools in autonomous workflows
 - Command allowlist permits `powershell` and `cmd`, which can bypass other restrictions if invoked deliberately
+- Confirmation gate is opt-in and off by default — autonomous workflows must install it explicitly at session start
 
 ### Release Infrastructure
 

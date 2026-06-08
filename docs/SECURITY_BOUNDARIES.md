@@ -114,7 +114,17 @@ These tools execute arbitrary subprocess commands within the allowlist:
 - Code execution: `execute_python`, `run_code`
 - Worker dispatch: `create_worker`, `dispatch_task`
 
-Level 3 tools pass through `SecureCommandExecutor` validation but are inherently more powerful. The user should be aware when Dan invokes these.
+Level 3 tools pass through `SecureCommandExecutor` validation but are inherently more powerful.
+
+**Confirmation gate:** A consent callback can be installed at runtime via `tool_registry.set_confirmation_gate(fn)`. When installed, the gate is invoked before any Level 3 tool executes. The callback receives `(tool_name, tool_input, safety_level)` and returns `True` to allow or `False` to deny. Denying a tool call records a `"denied"` entry in the audit log and returns an error string to the caller. The gate is not installed by default — existing CLI and GUI sessions are unaffected. To add a gate, call `set_confirmation_gate` at session startup. Example:
+
+```python
+def cli_gate(tool_name, tool_input, safety_level):
+    answer = input(f"Allow {tool_name}? [y/N] ")
+    return answer.strip().lower() == "y"
+
+tool_registry.set_confirmation_gate(cli_gate)
+```
 
 ### Optional tool families (not loaded by default without dependencies)
 
@@ -150,8 +160,25 @@ User input fed into tools is:
 
 ---
 
+## Tool Audit Log
+
+**Implemented in:** `security_utils.ToolAuditLog`
+**Wired by:** `tool_registry.execute_tool`
+
+Every tool invocation appends one JSON-lines entry to `%APPDATA%\Dan\tool_audit.log` (or `~/.dan/tool_audit.log` on non-Windows). Each entry records:
+
+- `timestamp` — ISO-8601 UTC
+- `tool_name` — name of the tool
+- `input_keys` — parameter *names* only (never values, which may be sensitive)
+- `safety_level` — declared level of the tool (1, 2, or 3)
+- `outcome` — `"success"`, `"error"`, or `"denied"`
+- `duration_ms` — execution wall-clock time
+- `error` — truncated error message when outcome is `"error"`
+
+The log is append-only plain text. To rotate it, rename or move the file. Write failures are silently swallowed so a missing or unwritable log directory never breaks tool execution. The log file itself is listed in `.gitignore` (`*.log`) and is never committed.
+
 ## Known Gaps
 
 - The command allowlist permits `powershell` and `cmd`, which can bypass other restrictions if invoked deliberately.
-- No audit log — there is no persistent record of which tools were invoked, with what arguments, and what they produced. This is a future hardening item.
-- No tool invocation confirmation gate — Dan does not prompt the user before executing Level 3 tools. This is appropriate for the current local-REPL usage model but should be revisited for any multi-agent or autonomous workflow.
+- The audit log records parameter names but not values — full forensic replay of tool calls is not possible from the log alone. This is intentional (values may be sensitive) but means the log is a detection aid, not a complete audit trail.
+- The confirmation gate is opt-in and off by default — autonomous or unattended sessions do not prompt before Level 3 tool execution unless the gate is explicitly installed.
