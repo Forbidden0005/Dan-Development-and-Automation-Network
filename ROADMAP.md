@@ -26,7 +26,7 @@ The long-term target is a professional-grade Windows application with:
 
 ## Current State Snapshot
 
-Verified on 2026-06-08 (steward pass 7):
+Verified on 2026-06-08 (steward pass 10):
 
 - `python -m pytest -q` passes (on real Windows; Linux sandbox has a `.pytest_cache` mount permission issue)
 - `python -m ruff check .` passes
@@ -106,6 +106,20 @@ These items are complete enough to count as done and should not remain mixed int
 ### Completed In Phase 6 Architecture Documentation Pass
 
 - Created `docs/ARCHITECTURE.md` with module group map, file-by-file ownership table, simplified dependency graph, known coupling issues, and module ownership summary
+
+### Completed In This Test Migration Pass (2026-06-08 steward pass 10)
+
+- Migrated `TestSecureTools` and `TestSecureToolsExpanded` in `tests/test_dan.py` from `tools_secure` to `tools`: all `import tools_secure` replaced with `import tools`; `_path_validator` and `_command_executor` patches now target `tools` module; `tools_secure.aiofiles` reference corrected to `tools._aiofiles`; `register_secure_core_tools()` calls replaced with `register_core_tools()`; `test_register_secure_core_tools_assigns_correct_safety_levels` renamed to `test_register_core_tools_assigns_correct_safety_levels`
+- No Python source files reference `tools_secure` except a historical docstring comment in `tests/test_tools_secure_runtime.py`
+- `tools_secure.py` deletion is now unblocked pending explicit user approval (Destructive Action Gate)
+
+### Completed In This Tool Consolidation Pass (2026-06-08 steward pass 9)
+
+- Added `read_file_async` to `tools.py`: optional `aiofiles` fast path with `asyncio.to_thread` fallback; mirrors production-ready implementation previously only in `tools_secure.py`
+- Added `run_bash` output truncation to `tools.py` (10 000-char cap with `"... (output truncated)"` notice — was missing, present in `tools_secure.py`)
+- Improved `grep_search` in `tools.py`: file size limit 1 MB → 5 MB, match cap 50 → 200 (was over-restrictive relative to `tools_secure.py`)
+- Improved `list_directory` in `tools.py`: tree depth 2 → 3, added KB suffix for files ≥ 1 024 bytes
+- Added deprecation header to `tools_secure.py`; documented migration path to `tools.py` and pending test updates
 
 ### Completed In This GUI Decoupling Pass (2026-06-08)
 
@@ -249,7 +263,7 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 
 ### Code Quality
 
-- `tools.py` and `tools_secure.py` overlap — merge into a single secure implementation (non-trivial; keep both until a safe migration path is designed)
+- ~~`tools.py` and `tools_secure.py` overlap — merge into a single secure implementation~~ ✓ test migration complete (2026-06-08 steward pass 10): `TestSecureTools` and `TestSecureToolsExpanded` in `test_dan.py` now import and patch `tools` directly; `test_tools_secure_runtime.py` was already migrated; no Python file references `tools_secure` except a historical comment. Remaining step: **delete `tools_secure.py`** (requires explicit user approval — Destructive Action Gate)
 - ~~`tools_secure.py` `register_secure_core_tools()` uses a flat parameters dict (missing `"type": "object"` + `"properties"` wrapper) — schema would be malformed if sent to the API; also missing `safety_level` annotations~~ ✓ fixed (2026-06-08 steward pass 8): parameters now use proper JSON Schema format; safety_level annotations added (Read/Glob/Grep/ListDir=1, Write/Edit=2, Bash=3); parallel test `test_register_secure_core_tools_assigns_correct_safety_levels` added to `tests/test_dan.py`
 - `dan_gui.py` legacy shell is now decoupled from `DanModernGUI` — `DanControllerMixin` in `dan_gui_controller.py` holds all shared non-visual controller logic; `DanModernGUI` inherits from `ctk.CTk + DanControllerMixin` directly; `dan_gui.py` can be retired when its direct callers are confirmed absent ✓ (2026-06-08)
 - Top-level flat module layout is serviceable but will become harder to navigate as optional tool families grow — long-term migration toward the `actions/`/`knowledge/`/`web/`/`workers/` package model

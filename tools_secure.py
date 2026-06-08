@@ -1,4 +1,15 @@
-"""Secure core tools: file operations, bash, search with enhanced security."""
+"""Secure core tools: file operations, bash, search with enhanced security.
+
+.. deprecated::
+    This module is scheduled for consolidation into ``tools.py``.
+    ``tools.py`` is now the single authoritative implementation for all core
+    tool handlers and is what the production runtime (``dan_gui_support.py``)
+    uses.  Tests targeting this module will be migrated to use ``tools.py``
+    directly, after which this file will be deleted.
+
+    Do not add new functionality here.  New tool implementations belong in
+    ``tools.py``.
+"""
 
 import asyncio
 import fnmatch
@@ -423,17 +434,33 @@ def list_directory(path: str = ".") -> str:
 
 
 def register_secure_core_tools():
-    """Register the secure versions of core tools."""
+    """Register the secure versions of core tools.
+
+    Each registration uses a well-formed JSON Schema object for ``parameters``
+    (``{"type": "object", "properties": {...}, "required": [...]}`` ) so that
+    ``Tool.to_api_schema()`` produces a valid Anthropic ``input_schema`` if
+    this function is ever used outside tests.
+
+    Safety levels mirror the production registrations in ``tools.py``:
+      Level 1 — read-only (Read, Glob, Grep, ListDir)
+      Level 2 — standard write (Write, Edit)
+      Level 3 — elevated execution (Bash)
+    """
 
     registry.register_tool(
         name="Read",
         description="Read a file's contents.",
         handler=read_file,
         category="files",
+        safety_level=1,
         parameters={
-            "path": {"type": "string", "description": "File path to read"},
-            "offset": {"type": "integer", "default": 0, "description": "Starting line (0-indexed)"},
-            "limit": {"type": "integer", "default": 0, "description": "Max lines to read (0=all)"},
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to read"},
+                "offset": {"type": "integer", "default": 0, "description": "Starting line (0-indexed)"},
+                "limit": {"type": "integer", "default": 0, "description": "Max lines to read (0=all)"},
+            },
+            "required": ["path"],
         },
     )
 
@@ -442,9 +469,14 @@ def register_secure_core_tools():
         description="Write content to a file. Shows diff of changes.",
         handler=write_file,
         category="files",
+        safety_level=2,
         parameters={
-            "path": {"type": "string", "description": "File path to write"},
-            "content": {"type": "string", "description": "Content to write"},
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to write"},
+                "content": {"type": "string", "description": "Content to write"},
+            },
+            "required": ["path", "content"],
         },
     )
 
@@ -453,10 +485,15 @@ def register_secure_core_tools():
         description="Replace exact text in a file. old_text must match exactly once.",
         handler=edit_file,
         category="files",
+        safety_level=2,
         parameters={
-            "path": {"type": "string", "description": "File path to edit"},
-            "old_text": {"type": "string", "description": "Exact text to find (must match once)"},
-            "new_text": {"type": "string", "description": "Replacement text"},
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to edit"},
+                "old_text": {"type": "string", "description": "Exact text to find (must match once)"},
+                "new_text": {"type": "string", "description": "Replacement text"},
+            },
+            "required": ["path", "old_text", "new_text"],
         },
     )
 
@@ -465,9 +502,14 @@ def register_secure_core_tools():
         description="Execute a shell command with security controls.",
         handler=run_bash,
         category="system",
+        safety_level=3,  # Elevated — subject to confirmation gate in autonomous workflows
         parameters={
-            "command": {"type": "string", "description": "Shell command to execute"},
-            "timeout": {"type": "integer", "default": 30, "description": "Timeout in seconds"},
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "Shell command to execute"},
+                "timeout": {"type": "integer", "default": 30, "description": "Timeout in seconds"},
+            },
+            "required": ["command"],
         },
     )
 
@@ -476,9 +518,14 @@ def register_secure_core_tools():
         description="Find files matching a glob pattern.",
         handler=glob_files,
         category="search",
+        safety_level=1,
         parameters={
-            "pattern": {"type": "string", "description": "Glob pattern (e.g. '*.py')"},
-            "path": {"type": "string", "default": ".", "description": "Root directory"},
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Glob pattern (e.g. '*.py')"},
+                "path": {"type": "string", "default": ".", "description": "Root directory"},
+            },
+            "required": ["pattern"],
         },
     )
 
@@ -487,14 +534,19 @@ def register_secure_core_tools():
         description="Search for a regex pattern in files.",
         handler=grep_files,
         category="search",
+        safety_level=1,
         parameters={
-            "pattern": {"type": "string", "description": "Regex pattern to search for"},
-            "path": {"type": "string", "default": ".", "description": "Root directory"},
-            "include": {
-                "type": "string",
-                "default": "",
-                "description": "File glob filter (e.g. '*.py')",
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Regex pattern to search for"},
+                "path": {"type": "string", "default": ".", "description": "Root directory"},
+                "include": {
+                    "type": "string",
+                    "default": "",
+                    "description": "File glob filter (e.g. '*.py')",
+                },
             },
+            "required": ["pattern"],
         },
     )
 
@@ -503,7 +555,12 @@ def register_secure_core_tools():
         description="List directory contents as a tree.",
         handler=list_directory,
         category="files",
+        safety_level=1,
         parameters={
-            "path": {"type": "string", "default": ".", "description": "Directory path"},
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "default": ".", "description": "Directory path"},
+            },
+            "required": [],
         },
     )

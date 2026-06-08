@@ -1,13 +1,17 @@
 """Core tools: file operations, bash, search with enhanced security."""
 
-import fnmatch
+import asyncio
 import logging
 import os
 import re
 import shutil
-import subprocess
 from difflib import unified_diff
 from pathlib import Path
+
+try:
+    import aiofiles as _aiofiles  # optional fast async I/O
+except ModuleNotFoundError:  # pragma: no cover
+    _aiofiles = None
 
 import tool_registry as registry
 from security_utils import (
@@ -118,6 +122,57 @@ def read_file(path: str, offset: int = 0, limit: int = 0) -> str:
         return f"Security error: {e}"
 
 
+async def read_file_async(path: str, offset: int = 0, limit: int = 0) -> str:
+    """Async version of :func:`read_file` for callers running in an event loop.
+
+    Uses ``aiofiles`` when available and falls back to
+    ``asyncio.to_thread`` otherwise so the event loop is never blocked.
+    """
+    try:
+        path = sanitize_user_input(path, max_length=500)
+        p = _safe_path(path)
+
+        if not p.exists():
+            return f"Error: File not found: {path}"
+        if not p.is_file():
+            return f"Error: Not a file: {path}"
+
+        validate_file_size(p, max_size_mb=50)
+
+        if _aiofiles is not None:
+            async with _aiofiles.open(p, mode="r", encoding="utf-8", errors="replace") as f:
+                content = await f.read()
+        else:
+            logger.debug("aiofiles not available; using thread-backed async file read fallback")
+            content = await asyncio.to_thread(
+                p.read_text,
+                encoding="utf-8",
+                errors="replace",
+            )
+
+        lines = content.splitlines()
+
+        if offset or limit:
+            end = offset + limit if limit else len(lines)
+            lines = lines[offset:end]
+
+        output_lines = []
+        for i, line in enumerate(lines[:10000]):
+            output_lines.append(f"{i+offset+1:4d} | {line}")
+
+        result = "\n".join(output_lines)
+        if len(lines) > 10000:
+            result += f"\n... (truncated, {len(lines)} total lines)"
+
+        return result
+
+    except ValueError as e:
+        return f"Security error: {e}"
+    except Exception as e:
+        logger.error("Error reading file %s: %s", path, e)
+        return f"Error reading {path}: {e}"
+
+
 def write_file(path: str, content: str, create_dirs: bool = True) -> str:
     """Write content to a file with security validation."""
     try:
@@ -212,6 +267,9 @@ def run_bash(command: str, timeout: int = 30) -> str:
         finally:
             _command_executor.max_execution_time = old_timeout
         logger.info("Command executed successfully: %s", command[:50])
+        # Prevent context exhaustion from verbose commands
+        if len(result) > 10_000:
+            result = result[:10_000] + "\n... (output truncated)"
         return result
 
     except ValueError as e:
@@ -279,15 +337,15 @@ def grep_search(pattern: str, path: str = ".", include: str = "") -> str:
     for fp in globs:
         if not fp.is_file() or any(s in fp.parts for s in skip):
             continue
-        if fp.stat().st_size > 1_000_000:  # skip files > 1MB
+        if fp.stat().st_size > 5_000_000:  # skip files > 5MB
             continue
         try:
             for i, line in enumerate(fp.read_text(errors="replace").splitlines(), 1):
                 if regex.search(line):
                     rel = fp.relative_to(root)
                     results.append(f"{rel}:{i}: {line.strip()}")
-                    if len(results) >= 50:
-                        results.append("... (truncated at 50 matches)")
+                    if len(results) >= 200:
+                        results.append("... (truncated at 200 matches)")
                         return "\n".join(results)
         except Exception:
             continue
@@ -312,7 +370,7 @@ def list_directory(path: str = ".") -> str:
     lines: list[str] = [f"{root.name}/"]
 
     def _tree(dir_path: Path, prefix: str, depth: int) -> None:
-        if depth > 2:
+        if depth > 3:
             return
         entries = sorted(dir_path.iterdir(), key=lambda x: (not x.is_dir(), x.name))
         entries = [e for e in entries if e.name not in skip and not e.name.startswith(".")]
@@ -325,7 +383,8 @@ def list_directory(path: str = ".") -> str:
                 _tree(entry, prefix + ext, depth + 1)
             else:
                 size = entry.stat().st_size
-                lines.append(f"{prefix}{connector}{entry.name} ({size:,}b)")
+                size_str = f"{size//1024:,}KB" if size >= 1024 else f"{size:,}b"
+                lines.append(f"{prefix}{connector}{entry.name} ({size_str})")
 
     _tree(root, "", 0)
     return "\n".join(lines)
