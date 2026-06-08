@@ -1,10 +1,22 @@
+[project]
+name = "dan"
+version = "2.5.1"
+description = "Dan — local-first Python development assistant for Windows"
+requires-python = ">=3.11"
+
+# Supported platforms: Windows 10 (build 19041+) and Windows 11.
+# Python 3.11 is the minimum because:
+#   - tomllib is stdlib from 3.11
+#   - X | Y union type hints are used throughout (PEP 604, Python 3.10+)
+#   - PyInstaller packaging is tested against 3.11
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "--tb=short --strict-markers"
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py311"
 line-length = 100
 exclude = [
     ".git",
@@ -12,7 +24,7 @@ exclude = [
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
-    "Dan",
+    ".dan",
     "__pycache__",
     "build",
     "dist",
@@ -23,13 +35,13 @@ select = ["E9", "F821", "F822", "F823"]
 
 [tool.black]
 line-length = 100
-target-version = ["py39"]
+target-version = ["py311"]
 
 [tool.coverage.run]
 source = ["."]
 omit = [
     "tests/*",
-    "Dan/*",
+    ".dan/*",
     ".venv/*",
 ]
 

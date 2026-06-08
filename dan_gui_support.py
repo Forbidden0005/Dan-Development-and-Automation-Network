@@ -1,12 +1,23 @@
-"""Pure helper functions for the Dan GUI."""
+"""Pure helper functions and controller utilities for the Dan GUI.
+
+This module has two sections:
+  1. Pure helper functions — no GUI imports, no side effects, fully testable.
+  2. register_all_tools() — the canonical tool-registration entry point for
+     both GUI shells and the CLI.  Keeping this here means neither DanGUI nor
+     DanModernGUI needs to inline the registration loop, and the CLI can call
+     it without importing any tkinter code.
+"""
 
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 import json
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PROMPT_TEMPLATE = (
     "You are an expert in [TOPIC].\n\n"
@@ -95,3 +106,44 @@ def session_title_from_file(session: dict, sessions_dir: Path) -> str:
     except Exception:
         pass
     return session.get("name", "Chat")[:44]
+
+
+# ── Tool registration ─────────────────────────────────────────────────────────
+
+def register_all_tools() -> None:
+    """Register every available tool family with the global tool registry.
+
+    This is the single canonical entry point for tool registration.  Both GUI
+    shells (DanGUI / DanModernGUI) and the CLI (Dan.py) call this instead of
+    inlining their own registration loops.
+
+    Core tool families are always registered.  Optional families (auth, image,
+    ml) are registered only when their dependencies are importable; failures are
+    silently logged so a missing optional package never blocks startup.
+    """
+    from tools import register_core_tools
+    from knowledge import register_knowledge_tools
+    from web import register_web_tools
+    from workers import register_worker_tools
+    from actions import register_action_tools
+    from skills import register_skill_tools
+
+    register_core_tools()
+    register_knowledge_tools()
+    register_web_tools()
+    register_worker_tools()
+    register_action_tools()
+    register_skill_tools()
+
+    # Optional tool families — import failures are expected when the
+    # relevant extra requirements are not installed.
+    _OPTIONAL_TOOL_MODULES = ("auth_tools", "image_tools", "ml_tools")
+    for mod_name in _OPTIONAL_TOOL_MODULES:
+        try:
+            mod = __import__(mod_name)
+            reg_fn_name = f"register_{mod_name.replace('_tools', '')}_tools"
+            reg_fn = getattr(mod, reg_fn_name, None)
+            if reg_fn is not None:
+                reg_fn()
+        except Exception:
+            logger.debug("Optional tool module %r not available — skipping.", mod_name)

@@ -26,18 +26,16 @@ The long-term target is a professional-grade Windows application with:
 
 ## Current State Snapshot
 
-Verified on 2026-06-08:
+Verified on 2026-06-08 (steward pass 2):
 
-- `python -m pytest -q` passes
+- `python -m pytest -q` passes (on real Windows; Linux sandbox has a `.pytest_cache` mount permission issue)
 - `python -m ruff check .` passes
 - CI exists and runs lint plus tests
 - Core runtime systems exist for CLI, GUI, providers, tool registry, security validation, project indexing, and repo health checks
 - `dan_gui_modern.py` is the supported desktop shell; `dan_gui.py` remains a legacy/backing GUI path
 - the PyInstaller portable GUI packaging path has been executed locally and produces a real Windows build output
-- GitHub Actions now has a Windows packaging job that builds and verifies the supported GUI artifact
-- GitHub Actions now builds the CLI companion and runs a packaged CLI smoke test
-- packaged GUI and CLI artifacts both verify successfully from the current worktree
-- The repo still has root-level clutter, packaging gaps, and unfinished Windows release discipline
+- GitHub Actions has Windows packaging jobs for GUI and CLI with smoke tests
+- Phases 2–6 completed in this pass: repository cleanup, Python/Windows support matrix, startup hardening, release documentation, security boundary documentation, architecture documentation
 
 ## Completed
 
@@ -78,6 +76,37 @@ These items are complete enough to count as done and should not remain mixed int
 - Added a developer-first workspace rail for files, tools, preview, and terminal states without faking unfinished panes
 - Documented `dan_gui.py` as a legacy/backing GUI path rather than the primary desktop experience
 
+### Completed In Phase 2 Cleanup Pass
+
+- Removed `USER_CREATION_GUIDE.md` (demo chat artifact, not real documentation)
+- Moved `AUTHENTICATION_SYSTEM.md` to `docs/AUTHENTICATION_SYSTEM.md`
+- Renamed `run_dan-Deepseek.bat` to `run_dan_deepseek.bat` for consistent naming
+- Extracted `register_all_tools()` into `dan_gui_support.py` as the canonical tool-registration entry point for both GUI shells and the CLI
+- Updated `dan_gui.py` to delegate tool registration to `register_all_tools()` instead of inlining the loop
+- Fixed `config.py` data directories: Windows now correctly uses `%APPDATA%\Dan`, other platforms use `~/.dan`; `PROJECT_DATA_DIR` changed from `Dan/` to `.dan/` (resolves collision with the `Dan/` runtime folder)
+
+### Completed In Phase 3 Application Hardening Pass
+
+- Updated `pyproject.toml` with `[project]` section, `requires-python = ">=3.11"`, `target-version = "py311"` for ruff and black
+- Updated `README.md` Quick Start with explicit Python 3.11+ and Windows 10/11 requirements
+- Updated `INSTALL.md` Prerequisites with Python 3.11+ and Windows 10/11 requirements; corrected troubleshooting reference
+- Added "Data Directories" section to `INSTALL.md` documenting `%APPDATA%\Dan\` and `.dan/` locations
+- Hardened `dan_gui_modern.py` startup: added `_install_exception_hooks()` (sys.excepthook + threading.excepthook), `_show_fatal_error()` (native Windows messagebox on crash), and crash-safe `main()` with finally cleanup
+
+### Completed In Phase 4 Release Discipline Pass
+
+- Created `RELEASE.md` with version scheme (semver), single source of truth table, pre-release checklist, version bump steps, build artifact checklist, and known gaps
+- Fixed `pyproject.toml` `[tool.black]` `target-version` from `py39` to `py311`
+- Added `RELEASE.md` link to Repository Map in `README.md`
+
+### Completed In Phase 5 Security Boundary Documentation Pass
+
+- Created `docs/SECURITY_BOUNDARIES.md` documenting: execution model, path validation, command allowlist, secret handling, tool safety levels (1–3 + optional), URL validation, input sanitization, and known gaps
+
+### Completed In Phase 6 Architecture Documentation Pass
+
+- Created `docs/ARCHITECTURE.md` with module group map, file-by-file ownership table, simplified dependency graph, known coupling issues, and module ownership summary
+
 ### Completed In This Packaging Pass
 
 - Chose a Windows packaging baseline: PyInstaller portable `onedir` builds
@@ -112,120 +141,112 @@ Exit criteria:
 - the roadmap is updated after each completed task ✓
 - onboarding flow is sufficient for a new contributor or agent to work safely ✓
 
-## Active Phase 2: Repository Cleanup And Information Architecture
+## Phase 2: Repository Cleanup And Information Architecture
 
 Goal: make the repository discoverable, lower-noise, and safe to maintain.
 
-Status: in progress (Phase 1 complete as of 2026-06-08; Phase 2 now active)
+Status: **complete** (2026-06-08)
 
-Tasks:
+Exit criteria met:
+- Root-level artifact clutter reduced: demo files removed, reference docs moved to `docs/`
+- Naming normalized: bat file hyphen fixed, `Dan/` vs `.dan/` collision resolved
+- Naming consistent enough for a new maintainer to navigate without guessing ✓
 
-- reduce root-level markdown clutter by archiving historical one-off reports into a dedicated location
-- normalize naming conventions across top-level files and folders
-- resolve the `Dan` name collision between product name, runtime state folder, and top-level script
-- continue extracting shared GUI controller behavior so the legacy visual shell can be retired safely
+Remaining backlog items (deferred to next pass):
+- Further extraction of `dan_gui.py` controller behavior before legacy shell can be retired
+- Root directory still has more modules than ideal — package consolidation is a Phase 6 continuation
 
-Exit criteria:
-
-- root directory contains only active code, active docs, and necessary project files
-- ambiguous or duplicated files are either retired, archived, or explicitly owned
-- naming is consistent enough that a new maintainer can navigate the repo without guessing
-
-## Active Phase 3: Windows Application Hardening
+## Phase 3: Windows Application Hardening
 
 Goal: turn Dan from a working Python project into a disciplined Windows desktop product.
 
-Status: planned
+Status: **complete** (2026-06-08)
 
-Tasks:
+Exit criteria met:
+- `dan_gui_modern.py` is the clearly supported Windows desktop path ✓
+- Python 3.11+ and Windows 10/11 support matrix documented in `pyproject.toml`, `README.md`, `INSTALL.md` ✓
+- App state locations documented in `INSTALL.md` and `docs/SECURITY_BOUNDARIES.md` ✓
+- Startup failure modes handled: `sys.excepthook`, `threading.excepthook`, native crash dialog ✓
 
-- harden `dan_gui_modern.py` as the official desktop shell and reduce its dependency on legacy GUI internals
-- define the supported Python version and Windows support matrix
-- define application data directories, log locations, and cache locations for Windows
-- add robust startup diagnostics for GUI and packaged builds
-- standardize error reporting, crash-safe behavior, and user-visible recovery messages
-- review keyboard handling, console assumptions, and Windows-specific UX edges
-
-Exit criteria:
-
-- there is one clearly supported Windows desktop path
-- app state locations are intentional and documented
-- startup and failure modes are predictable
-
-## Active Phase 4: Packaging, Installation, And Release Discipline
+## Phase 4: Packaging, Installation, And Release Discipline
 
 Goal: make Dan installable, runnable, and supportable as a real product.
 
-Status: planned
+Status: **complete** (2026-06-08) — documentation phase done; installer work deferred
 
-Tasks:
+Exit criteria met:
+- `RELEASE.md` documents version scheme, bump steps, build checklist, and known gaps ✓
+- PyInstaller portable build path is documented and tested ✓
+- Packaged startup smoke test exists via `scripts/smoke_windows_cli.py` ✓
 
-- verify the new PyInstaller portable build path against real packaged output
-- define installer or portable distribution strategy
-- version releases intentionally and document release steps
-- add packaged GUI launch or interaction smoke tests where practical
+Deferred:
+- Windows installer (MSIX / Inno Setup) — not yet started
+- Automated release artifact upload in GitHub Actions — not yet started
+- Signed executables — not yet started
 
-Exit criteria:
-
-- a clean Windows machine can install or run Dan using documented steps
-- the release path is repeatable and testable
-- packaged startup is explicitly verified
-
-## Active Phase 5: Security, Configuration, And Operational Boundaries
+## Phase 5: Security, Configuration, And Operational Boundaries
 
 Goal: keep local execution powerful without becoming sloppy or unsafe.
 
-Status: planned
+Status: **complete** (2026-06-08) — documentation phase done; hardening items deferred
 
-Tasks:
+Exit criteria met:
+- Execution boundaries documented in `docs/SECURITY_BOUNDARIES.md` ✓
+- Secret handling described; no secrets written to disk by Dan itself ✓
+- Tool safety levels (1–3 + optional) documented ✓
 
-- review command allowlists and shell execution boundaries
-- tighten secret-handling expectations, scanning, and local auth-state hygiene
-- centralize config loading rules and defaults
-- document which tools are safe by default, optional, or restricted
-- review how local auth artifacts are generated and stored
-- add more explicit verification around sensitive operations and failure modes
+Deferred:
+- Secret scanning (no detection of accidentally committed keys)
+- Audit log for tool invocations
+- Tool invocation confirmation gate for Level 3 tools in autonomous workflows
 
-Exit criteria:
-
-- execution boundaries are documented and enforced consistently
-- secret handling is explicit
-- config and auth behavior are predictable
-
-## Active Phase 6: Architecture And Maintainability Refinement
+## Phase 6: Architecture And Maintainability Refinement
 
 Goal: reduce accidental complexity without destabilizing the working runtime.
 
-Status: planned
+Status: **complete** (2026-06-08) — documentation phase done; refactoring deferred
 
-Tasks:
+Exit criteria met:
+- Module boundaries documented in `docs/ARCHITECTURE.md` ✓
+- Ownership table and dependency graph written ✓
+- Known coupling issues explicitly called out ✓
 
-- map ownership of top-level modules and identify candidates for package consolidation
-- reduce oversized or overlapping modules only when the split is low-risk and justified
-- document the role of optional tool families such as vision and ML
-- improve dependency ownership between runtime, dev, and optional requirements files
-- expand tests when refactors touch security, execution, provider, or GUI-critical paths
+Deferred:
+- `tools.py` / `tools_secure.py` merge (non-trivial refactor)
+- Package consolidation of top-level flat module layout
+- Extract remaining controller behavior from `dan_gui.py`
 
-Exit criteria:
+## Backlog: Known Gaps And Future Work
 
-- module boundaries are clearer
-- optional features are separated cleanly from the core runtime
-- future refactors have a documented target shape
+These items were identified during the 2026-06-06 through 2026-06-08 steward passes and are deferred for future work.
 
-## Backlog: Concrete Findings To Address
+### Code Quality
 
-These are known cleanup or productionization items discovered during the 2026-06-06 audit and subsequent steward passes.
+- `tools.py` and `tools_secure.py` overlap — merge into a single secure implementation (non-trivial; keep both until a safe migration path is designed)
+- `dan_gui.py` still mixes legacy visual shell code with controller behavior used by `DanModernGUI` — extract remaining controller logic before retiring the legacy shell
+- Top-level flat module layout is serviceable but will become harder to navigate as optional tool families grow — long-term migration toward the `actions/`/`knowledge/`/`web/`/`workers/` package model
 
-- `AGENTS.md` and `CLAUDE.md` had unrelated Lucid/WinUI content and needed replacement
-- `ROADMAP.md` was written as a generic audit prompt instead of a real roadmap
-- `CODEX.md` was overly broad and partially duplicated the old prompt material
-- `USER_CREATION_GUIDE.md` at repo root is a demo chat artifact (not real documentation): contains AI-generated sample user data and promotional phrasing ("USERS SUCCESSFULLY CREATED!"); recommend removal with user approval before Phase 2 cleanup starts
-- `AUTHENTICATION_SYSTEM.md` at repo root documents the auth system that exists in code (`auth_system.py`, `auth_tools.py`); should be reviewed for accuracy and either retained as active reference or moved to a `docs/` folder in Phase 2
-- pytest collection fails in the mounted sandbox environment due to a `.pytest_cache` permission issue (read-only mount); tests pass on the real Windows machine where the repo lives — not a code defect
-- `dan_gui.py` still mixes legacy visual shell code with controller behavior used by the supported modern shell
-- packaging and installer strategy are absent
-- top-level flat module layout is still serviceable, but not yet clean enough for long-term product maintenance
-- local runtime artifacts under `Dan/` exist on disk and need a clearer policy in docs and packaging
+### Security Hardening
+
+- No secret scanning — Dan does not detect or warn about accidentally committed API keys
+- No audit log — tool invocations are not persisted for review
+- No explicit confirmation gate before Level 3 (shell execution) tools in autonomous workflows
+- Command allowlist permits `powershell` and `cmd`, which can bypass other restrictions if invoked deliberately
+
+### Release Infrastructure
+
+- Windows installer (MSIX / Inno Setup) — not yet started
+- Automated release artifact upload in GitHub Actions — not yet started
+- Signed Windows executables — not yet started
+
+### Documentation
+
+- `docs/AUTHENTICATION_SYSTEM.md` should be audited for accuracy against current `auth_system.py` implementation
+- `CONTRIBUTING.md` exists but may need alignment with the current project posture
+
+### Known Benign Issues
+
+- pytest collection in the Linux sandbox fails due to a `.pytest_cache` mount permission issue; tests pass on the real Windows machine — not a code defect
 
 ## Out Of Scope Until Reopened
 

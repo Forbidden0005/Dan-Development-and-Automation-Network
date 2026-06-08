@@ -22,6 +22,7 @@ from dan_gui_support import (
     session_title_from_file,
     timestamp_label,
 )
+# Tool registration is inherited via DanGUI._init_dan() → register_all_tools().
 from dan_gui_theme import THEME_DARK, THEME_LIGHT, get_theme_tokens, normalize_theme, theme_from_config
 from gui_compat import ctk, ensure_gui_runtime
 from providers import get_provider
@@ -1301,13 +1302,96 @@ class DanModernGUI(DanGUI):
         return format_relative_date(timestamp)
 
 
+def _show_fatal_error(title: str, message: str) -> None:
+    """Show a native error dialog on Windows; fall back to stderr everywhere else.
+
+    Using tkinter.messagebox keeps this dependency-free (tkinter is always
+    available when the GUI path is reachable) and avoids a second ctk import
+    during crash handling.
+    """
+    import sys
+    import traceback
+
+    # Always print to stderr so crash details are captured in log files.
+    print(f"\n{'='*60}\n{title}\n{message}\n{'='*60}", file=sys.stderr)
+
+    # On Windows, also show a native message box so the error is visible when
+    # the user double-clicked the executable and has no console window.
+    if sys.platform == "win32":
+        try:
+            import tkinter as tk  # noqa: PLC0415
+            import tkinter.messagebox as mb  # noqa: PLC0415
+
+            root = tk.Tk()
+            root.withdraw()
+            mb.showerror(title, message)
+            root.destroy()
+        except Exception:  # noqa: BLE001
+            pass  # If tkinter itself fails, we already printed to stderr above.
+
+
+def _install_exception_hooks() -> None:
+    """Install sys.excepthook and threading.excepthook to surface crashes.
+
+    Without these hooks, unhandled exceptions in non-main threads are silently
+    swallowed on Windows when there is no console window.  This ensures that
+    any crash — whether in the main thread or a background worker — produces a
+    visible error dialog.
+    """
+    import sys
+    import threading
+    import traceback
+
+    def _handle_main_thread_exception(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Let Ctrl+C exit silently — that is intentional.
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        details = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        _show_fatal_error(
+            f"{APP_NAME} — Unexpected Error",
+            f"{exc_type.__name__}: {exc_value}\n\nDetails logged to stderr.",
+        )
+
+    def _handle_thread_exception(args):
+        if args.exc_type is None or issubclass(args.exc_type, SystemExit):
+            return
+        details = "".join(
+            traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)
+        )
+        _show_fatal_error(
+            f"{APP_NAME} — Background Thread Error",
+            f"{args.exc_type.__name__}: {args.exc_value}\n\nDetails logged to stderr.",
+        )
+
+    sys.excepthook = _handle_main_thread_exception
+    threading.excepthook = _handle_thread_exception
+
+
 def main():
     from workers import get_pool
 
+    _install_exception_hooks()
     ensure_gui_runtime()
-    app = DanModernGUI()
-    app.mainloop()
-    get_pool().shutdown()
+
+    try:
+        app = DanModernGUI()
+        app.mainloop()
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+
+        details = traceback.format_exc()
+        _show_fatal_error(
+            f"{APP_NAME} — Startup Error",
+            f"{type(exc).__name__}: {exc}\n\nDetails logged to stderr.",
+        )
+        raise
+    finally:
+        # Always attempt a clean shutdown of background workers.
+        try:
+            get_pool().shutdown(wait=False)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 if __name__ == "__main__":

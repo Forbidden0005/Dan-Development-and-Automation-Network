@@ -2,7 +2,8 @@
 
 ## Prerequisites
 
-- Python 3.9 or higher
+- **Windows 10 (build 19041+) or Windows 11** — Dan is a Windows-first product.
+- **Python 3.11 or higher** — required for `tomllib` (stdlib) and `X | Y` union type hints.
 - pip (Python package installer)
 - An API key from one of the supported providers
 
@@ -130,6 +131,52 @@ Try asking:
 
 ---
 
+## Data Directories
+
+Dan stores persistent state in two locations:
+
+### User-global data — `%APPDATA%\Dan\`
+
+```
+C:\Users\<name>\AppData\Roaming\Dan\
+```
+
+This directory holds state that persists across installs and is not project-specific:
+- **Knowledge** — ingested documents and embeddings
+- **Sessions** — saved chat history
+- **Auth cache** — provider credential metadata (not API keys)
+
+Dan creates this directory automatically on first run. To find it quickly:
+
+```powershell
+explorer %APPDATA%\Dan
+```
+
+### Project-local data — `.dan\`
+
+```
+<your-project-root>\.dan\
+```
+
+This directory holds per-repository state:
+- **Project index** — file structure and symbol cache for the open project
+- **Auth cache** — per-project credential overrides
+- **Local knowledge** — project-specific ingested docs
+
+`.dan\` is listed in `.gitignore` and is never committed. It is recreated automatically if deleted.
+
+### Logs
+
+Dan logs to stderr by default. To redirect to a file:
+
+```powershell
+python Dan.py 2> dan.log
+```
+
+No log files are written automatically. Startup errors appear in the terminal before the GUI window opens.
+
+---
+
 ## Troubleshooting
 
 ### "ModuleNotFoundError: No module named 'customtkinter'"
@@ -163,7 +210,7 @@ sudo pacman -S tk
 Try:
 1. Restart the application
 2. Check terminal for error messages
-3. Verify your Python version: `python --version` (must be 3.9+)
+3. Verify your Python version: `python --version` (must be 3.11+)
 
 ### Can't install dependencies on Windows
 

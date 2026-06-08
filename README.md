@@ -24,6 +24,8 @@ This repository is in a transition phase: the runtime works, tests pass, and cor
 
 ## Quick Start
 
+**Requires:** Python 3.11+ · Windows 10 (build 19041+) or Windows 11
+
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -115,6 +117,7 @@ That Windows packaging job also builds the CLI companion and runs a packaged CLI
 - [ONBOARDING.md](/C:/Users/tyler/Desktop/Dan/ONBOARDING.md): setup, reading order, first-run workflow
 - [PROJECT_INTEGRITY.md](/C:/Users/tyler/Desktop/Dan/PROJECT_INTEGRITY.md): mandatory decision gate for every task
 - [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md): canonical direction, backlog, and completed work
+- [RELEASE.md](/C:/Users/tyler/Desktop/Dan/RELEASE.md): version scheme, release steps, and build checklist
 - [CODEX.md](/C:/Users/tyler/Desktop/Dan/CODEX.md): strict operating instructions for Codex sessions
 
 ## Immediate Production Gaps

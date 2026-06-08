@@ -31,18 +31,15 @@ from dan_gui_support import (
     extract_assistant_text,
     format_relative_date,
     infer_provider_from_model,
+    register_all_tools,
     sanitize_prompt_name,
     session_title_from_file,
     timestamp_label,
 )
 from providers import get_provider
 from agent import run_agent_loop, AgentInterrupted
-from tools import register_core_tools
-from knowledge import register_knowledge_tools
-from web import register_web_tools
-from workers import register_worker_tools, get_pool
-from actions import register_action_tools, get_all_actions
-from skills import register_skill_tools
+from workers import get_pool
+from actions import get_all_actions
 from tool_registry import get_all_tools
 import session_mgr
 import cost_tracker
@@ -174,20 +171,9 @@ class DanGUI(ctk.CTk):
     # ── Init ──────────────────────────────────────────────────────────────────
 
     def _init_dan(self):
-        register_core_tools()
-        register_knowledge_tools()
-        register_web_tools()
-        register_worker_tools()
-        register_action_tools()
-        register_skill_tools()
-        for mod in ("auth_tools", "image_tools", "ml_tools"):
-            try:
-                m = __import__(mod)
-                fn = f"register_{mod.replace('_tools','')}_tools"
-                if hasattr(m, fn):
-                    getattr(m, fn)()
-            except Exception:
-                pass
+        # Tool registration is delegated to the canonical entry point so both
+        # GUI shells and the CLI share a single implementation.
+        register_all_tools()
         try:
             self.provider = get_provider(self.provider_name, self.model_name)
         except Exception as e:
