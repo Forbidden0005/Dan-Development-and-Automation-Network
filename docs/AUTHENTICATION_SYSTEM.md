@@ -1,348 +1,228 @@
-# Dan AI Agent Authentication System
+# Dan Authentication System
 
-## 🔐 Overview
+## Overview
 
-The Dan AI Agent now includes a comprehensive authentication and authorization system that provides:
+Dan includes an optional authentication and authorization system in `auth_system.py` / `auth_tools.py`. It provides:
 
-- **API Key Authentication**: Secure token-based access control
-- **Role-Based Access Control (RBAC)**: Granular permissions based on user roles
-- **Session Management**: Secure session handling with timeouts
-- **Audit Logging**: Complete audit trail of authentication events
-- **User Management**: Tools for creating and managing users
+- **API Key Authentication**: Token-based access control
+- **Role-Based Access Control (RBAC)**: Granular permissions by role
+- **Session Management**: Session handling with configurable timeouts
+- **Audit Logging**: Authentication events written to a dedicated log file
+- **User Management Tools**: `CreateUser`, `ListUsers`, `AuthStatus`, `TestPermissions`
 
-## 🚀 Quick Start
+> **Default behavior**: Authentication is **disabled** by default (`require_auth = False`). In this mode, every operation runs with full permissions under a guest session. To enable auth, set `require_auth: True` in `AUTH_CONFIG` in `auth_system.py` or set the `DAN_ADMIN_OVERRIDE` environment variable.
 
-### 1. First Time Setup
+---
 
-When you first run Dan, it will automatically create a default admin user:
+## Data File Locations
 
-```bash
-python Dan.py
+All auth-related files are stored under the Dan user data directory:
+
+| File | Windows path | Purpose |
+|------|-------------|---------|
+| `auth_data.json` | `%APPDATA%\Dan\auth_data.json` | User accounts and active sessions |
+| `auth_audit.log` | `%APPDATA%\Dan\auth_audit.log` | Auth event audit trail |
+| `auth_salt.bin` | `%APPDATA%\Dan\auth_salt.bin` | Persistent random PBKDF2 salt |
+| `bootstrap_admin_key.txt` | `%APPDATA%\Dan\bootstrap_admin_key.txt` | One-time admin key on first run |
+
+---
+
+## First-Time Setup
+
+When `auth_data.json` does not exist, Dan creates a default admin user automatically and writes the API key to the bootstrap file:
+
+```
+%APPDATA%\Dan\bootstrap_admin_key.txt
 ```
 
-**Important**: Save the generated API key securely! You'll see output like:
+The console prints the path to that file — not the key itself:
 
 ```
 ============================================================
 DEFAULT ADMIN USER CREATED
 ============================================================
 Username: admin
-API Key:  <generated-admin-api-key>
-Roles:    admin (full access)
-
-Save this API key securely - it won't be shown again!
-Set environment variable: export DAN_API_KEY=<generated-admin-api-key>
+Bootstrap file: C:\Users\<you>\AppData\Roaming\Dan\bootstrap_admin_key.txt
+Store the key securely, then delete the bootstrap file.
 ============================================================
 ```
 
-### 2. Set Your API Key
+Open the bootstrap file to retrieve the key, then:
 
-Set the API key as an environment variable:
-
-```bash
-# Linux/Mac
-export DAN_API_KEY=your_api_key_here
-
+```powershell
 # Windows
-set DAN_API_KEY=your_api_key_here
+$env:DAN_API_KEY = "<your-admin-key>"
 ```
 
-### 3. Start Using Dan
+Delete `bootstrap_admin_key.txt` after saving the key elsewhere. It is created with `0o600` permissions on platforms that support it.
 
-Now all Dan operations will be authenticated:
+---
 
-```bash
-python Dan.py "check my authentication status"
-```
+## Configuration
 
-## 🏗️ Architecture
-
-### Components
-
-1. **AuthManager**: Core authentication engine
-2. **Session Management**: Handles user sessions and timeouts  
-3. **Permission System**: RBAC with granular permissions
-4. **Audit Logging**: Comprehensive security audit trail
-5. **Auth Tools**: User management tools for Dan
-
-### Security Features
-
-- **Secure Password Hashing**: PBKDF2 with SHA-256 (100,000 iterations)
-- **Session Timeouts**: Automatic session expiration (1 hour default)
-- **Failed Login Protection**: Account lockout after failed attempts
-- **Audit Logging**: Complete audit trail in `auth_audit.log`
-- **Permission Validation**: Every tool call is validated
-
-## 👥 User Roles & Permissions
-
-### Built-in Roles
-
-| Role | Description | Permissions |
-|------|-------------|-------------|
-| **admin** | Full system access | `*` (all permissions) |
-| **developer** | Development & scripting | File ops, knowledge, workers, actions |
-| **analyst** | Read access + analysis tools | File read, web, image, ML predict |
-| **readonly** | Basic read operations | File read, directory listing, knowledge recall |
-| **guest** | Minimal access | File read, knowledge recall |
-
-### Permission System
-
-Permissions follow a hierarchical pattern:
-- `tools.read` - Read file contents
-- `tools.write` - Write/edit files  
-- `tools.bash` - Execute shell commands
-- `knowledge.*` - All knowledge operations
-- `ml.train` - Train ML models
-- `ml.predict` - Use ML models for prediction
-
-## 🛠️ User Management
-
-### Creating Users
-
-Use the `CreateUser` tool (admin only):
-
-```
-CreateUser username="alice" roles="developer,analyst"
-```
-
-### Listing Users
-
-Use the `ListUsers` tool (admin only):
-
-```
-ListUsers
-```
-
-### Checking Auth Status
-
-Use the `AuthStatus` tool:
-
-```
-AuthStatus
-```
-
-### Testing Permissions
-
-Use the `TestPermissions` tool:
-
-```
-TestPermissions
-```
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DAN_API_KEY` | Your API key for authentication | None |
-| `DAN_ADMIN_OVERRIDE` | Emergency admin override key | None |
-| `DAN_AUTH_SALT` | Salt for password hashing | "dan_ai_agent_salt_2024" |
-
-### Configuration Options
-
-Edit `AUTH_CONFIG` in `auth_system.py`:
+`AUTH_CONFIG` in `auth_system.py` controls all runtime behavior:
 
 ```python
 AUTH_CONFIG = {
-    "require_auth": True,        # Enable/disable auth
-    "session_timeout": 3600,     # Session timeout (seconds)
-    "max_failed_attempts": 5,    # Lockout after N failed attempts
-    "lockout_duration": 900,     # Lockout duration (seconds)
-    "api_key_length": 32,        # Generated API key length
+    "require_auth": False,        # Set True to enforce authentication
+    "session_timeout": 3600,      # Session timeout in seconds (default: 1 hour)
+    "max_failed_attempts": 5,     # Failed attempts before lockout
+    "lockout_duration": 900,      # Lockout duration in seconds (default: 15 min)
+    "api_key_length": 32,         # Generated key length
+    "admin_override_key": os.getenv("DAN_ADMIN_OVERRIDE", ""),
+    "auth_database": USER_DATA_DIR / "auth_data.json",
+    "audit_log":     USER_DATA_DIR / "auth_audit.log",
+    "salt_file":     USER_DATA_DIR / "auth_salt.bin",
+    "bootstrap_admin_key_file": USER_DATA_DIR / "bootstrap_admin_key.txt",
 }
 ```
 
-## 🔍 Monitoring & Auditing
+### Environment Variables
 
-### Audit Log
+| Variable | Description |
+|----------|-------------|
+| `DAN_API_KEY` | API key for the current user session |
+| `DAN_ADMIN_OVERRIDE` | Emergency override key — grants full admin access if set |
+| `DAN_AUTH_SALT` | Override the file-backed salt with a fixed string (not recommended; primarily for testing) |
 
-All authentication events are logged to `auth_audit.log`:
+**Salt behavior**: If `DAN_AUTH_SALT` is not set, Dan generates a random 32-byte salt on first run and persists it to `auth_salt.bin`. This file is the source of truth for hashing. Deleting it invalidates all existing API keys. Do not rotate it unless you intend to invalidate all credentials.
+
+---
+
+## User Roles and Permissions
+
+### Built-in Roles
+
+| Role | Permissions |
+|------|-------------|
+| `admin` | `*` — all permissions |
+| `developer` | `tools.read/write/edit/bash/glob/grep/listdir`, `knowledge.*`, `skills.*`, `workers.*`, `actions.*` |
+| `analyst` | `tools.read/glob/grep/listdir`, `knowledge.read/recall`, `web.*`, `image.*`, `ml.predict/list` |
+| `readonly` | `tools.read/listdir`, `knowledge.recall/list` |
+| `guest` | `tools.read`, `knowledge.recall` |
+
+### Permission Matching
+
+`check_permission()` resolves permissions in priority order:
+
+1. Wildcard `*` grants everything (admin and auth-disabled guest sessions)
+2. Exact match: `"tools.read"` in the session's permission set
+3. Namespace wildcard: session has `"tools.*"` and the requested permission starts with `"tools."`
+
+---
+
+## User Management Tools
+
+These tools are registered by `register_auth_tools()` in `auth_tools.py` and require an active session.
+
+| Tool | Required role | Description |
+|------|--------------|-------------|
+| `LoginUser` | — | Authenticate with an API key |
+| `LogoutUser` | any | Destroy the current session |
+| `AuthStatus` | any | Show current session, roles, and system status |
+| `CreateUser` | admin | Create a new user account |
+| `ListUsers` | admin | List all users and their status |
+| `TestPermissions` | any | Show which permissions the current session holds |
+
+### Examples
 
 ```
-2024-12-19 10:30:15,123 [AUTH] INFO: User admin authenticated successfully from 127.0.0.1
-2024-12-19 10:30:20,456 [AUTH] WARNING: Authentication failed - invalid API key fingerprint 1a2b3c4d5e6f from 192.168.1.100
-2024-12-19 10:35:10,789 [AUTH] INFO: User alice created by admin with roles: ['developer']
-```
-
-### Security Monitoring
-
-The system tracks:
-- Authentication attempts (successful and failed)
-- User creation/modification
-- Session creation/destruction
-- Permission violations
-- Account lockouts
-
-## 🚨 Security Best Practices
-
-### API Key Management
-
-- **Never commit API keys to version control**
-- **Use environment variables for API keys**
-- **Rotate API keys regularly**
-- **Use minimal required permissions**
-
-### Production Deployment
-
-1. **Change default salt**: Set `DAN_AUTH_SALT` environment variable
-2. **Enable HTTPS**: Use encrypted connections
-3. **Monitor audit logs**: Set up log monitoring
-4. **Regular security reviews**: Review users and permissions
-
-### Emergency Access
-
-If you lose access, you can:
-
-1. **Set admin override**: `export DAN_ADMIN_OVERRIDE=your_emergency_key`
-2. **Reset auth database**: Delete `auth_data.json` (creates new admin)
-3. **Disable auth temporarily**: Set `require_auth: False` in config
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**"Authentication required" error:**
-```bash
-# Solution: Set your API key
-export DAN_API_KEY=your_key_here
-```
-
-**"Permission denied" error:**
-```bash
-# Solution: Check your permissions
-Dan.py "test my permissions"
-```
-
-**"Invalid API key" error:**
-```bash
-# Solution: Verify your API key is correct
-echo $DAN_API_KEY
-```
-
-### Debug Mode
-
-Disable auth for testing:
-```python
-# In auth_system.py
-AUTH_CONFIG["require_auth"] = False
-```
-
-## 📊 Security Status
-
-After implementation, Dan's security posture improved from **B+** to **A-**:
-
-### ✅ **RESOLVED SECURITY GAPS**
-- [x] **Authentication System** - API key based auth implemented
-- [x] **Role-Based Access Control** - Granular permissions active  
-- [x] **Session Management** - Secure sessions with timeouts
-- [x] **Audit Logging** - Complete audit trail implemented
-
-### ⚠️ **REMAINING IMPROVEMENTS**
-- [ ] **Resource Limits** - CPU/memory usage controls (P1)
-- [ ] **Container Sandboxing** - Process isolation (P2)  
-- [ ] **Multi-Factor Authentication** - TOTP/hardware keys (P3)
-- [ ] **Web Interface** - Browser-based access (P3)
-
-## 🎯 API Reference
-
-### Core Functions
-
-```python
-# Authenticate user
-session = authenticate_user(api_key)
-
-# Check permissions  
-has_permission = auth_manager.check_permission(session, "tools.read")
-
-# Create user (admin only)
-api_key = auth_manager.create_user(username, roles)
-
-# Get auth status
-status = auth_manager.get_auth_status()
-```
-
-### Tool Decorators
-
-```python
-from auth_system import require_auth, require_role
-
-@require_auth("knowledge.write")
-def sensitive_function():
-    # Requires authentication and knowledge.write permission
-    pass
-
-@require_role(["admin", "developer"])  
-def admin_function():
-    # Requires admin or developer role
-    pass
-```
-
-## 📋 Migration Guide
-
-### Upgrading Existing Dan Installations
-
-1. **Backup existing data**:
-   ```bash
-   cp -r knowledge/ knowledge_backup/
-   ```
-
-2. **Update Dan**:
-   ```bash
-   git pull origin main
-   pip install -r requirements.txt
-   ```
-
-3. **First run** (creates admin user):
-   ```bash
-   python Dan.py
-   ```
-
-4. **Set API key**:
-   ```bash
-   export DAN_API_KEY=<generated-key-from-step-3>
-   ```
-
-5. **Create additional users** as needed
-
-### Existing Scripts
-
-Update existing Dan scripts:
-```python
-# Old way (no auth)
-python Dan.py "some command"
-
-# New way (with auth)  
-export DAN_API_KEY=your_key
-python Dan.py "some command"
-```
-
-## 🔧 Advanced Configuration
-
-### Custom Roles
-
-Add custom roles in `auth_system.py`:
-
-```python
-ROLE_PERMISSIONS = {
-    # Existing roles...
-    "custom_role": {
-        "tools.read", "tools.listdir", 
-        "web.fetch", "custom.permission"
-    }
-}
-```
-
-### Custom Permissions
-
-Add permission checks to your tools:
-
-```python
-@require_auth("my.custom.permission")
-def my_custom_tool():
-    return "This requires custom permission"
+CreateUser username="alice" roles="developer,analyst"
+ListUsers
+AuthStatus
+TestPermissions
 ```
 
 ---
 
-**The Dan AI Agent authentication system provides enterprise-grade security while maintaining ease of use. All operations are now authenticated and authorized, closing the critical security gap identified in the security audit.**
+## API Reference
+
+### Core Functions
+
+```python
+from auth_system import authenticate_user, get_auth_manager, require_auth, require_role
+
+# Authenticate and get a session
+session = authenticate_user(api_key)
+
+# Check a permission on a session
+has_access = get_auth_manager().check_permission(session, "tools.write")
+
+# Create a new user (returns the new API key)
+api_key = get_auth_manager().create_user("alice", ["developer"], creator_username="admin")
+
+# Get system-wide auth status
+status = get_auth_manager().get_auth_status()
+```
+
+### Decorators
+
+```python
+@require_auth("knowledge.write")
+def sensitive_function():
+    # Runs only if the current session has knowledge.write (or *)
+    pass
+
+@require_role(["admin", "developer"])
+def admin_function():
+    # Runs only if the current user has admin or developer role
+    pass
+```
+
+The decorators resolve the session from `get_current_session()`. The agent loop or tool registry is responsible for calling `set_current_session(session)` before dispatching tool calls.
+
+---
+
+## Audit Logging
+
+Authentication events are appended to `%APPDATA%\Dan\auth_audit.log`:
+
+```
+2024-12-19 10:30:15,123 [AUTH] INFO: User admin authenticated successfully from 127.0.0.1
+2024-12-19 10:30:20,456 [AUTH] WARNING: Authentication failed - invalid API key fingerprint 1a2b3c4d from
+2024-12-19 10:35:10,789 [AUTH] INFO: User alice created by admin with roles: ['developer']
+```
+
+Failed authentication logs include a short HMAC fingerprint of the key (not the key itself) for correlation without exposing credentials.
+
+---
+
+## Security Notes
+
+### What the auth system does
+- PBKDF2-SHA256 (100,000 iterations) for key hashing
+- Timing-safe comparison (`hmac.compare_digest`) for key lookups
+- Account lockout after configurable failed attempts
+- Expired session cleanup on load and validate
+
+### What the auth system does not do
+- It does not enforce auth at the network layer — Dan is a local desktop application, not a network service. "Enable HTTPS" does not apply.
+- It does not currently scan for accidentally committed API keys (tracked in security backlog).
+- It does not produce an audit log for tool invocations beyond auth events (tracked in security backlog).
+- There is no confirmation gate before Level 3 (shell execution) tools in autonomous workflows (tracked in security backlog).
+
+---
+
+## Emergency Access
+
+If you lose access:
+
+1. **Admin override**: Set `DAN_ADMIN_OVERRIDE=<any-key>` and use that key to authenticate. This bypasses user lookup.
+2. **Reset the auth database**: Delete `%APPDATA%\Dan\auth_data.json`. Dan recreates it with a new admin user and writes a new bootstrap file on next startup. Existing API keys for other users are invalidated.
+3. **Disable auth temporarily**: Set `AUTH_CONFIG["require_auth"] = False` in `auth_system.py` (already the default in dev mode).
+
+---
+
+## Troubleshooting
+
+**"Authentication required" error but I set `DAN_API_KEY`:**
+Verify that `require_auth` is `True` in `AUTH_CONFIG`. If it is `False`, the env var is not checked — every request runs as guest with full permissions.
+
+**"Invalid API key":**
+Check that `DAN_API_KEY` matches the key that was generated. If the `auth_salt.bin` file was deleted or replaced, all keys must be regenerated.
+
+**Lost bootstrap key:**
+Delete `auth_data.json` to force recreation of the admin user. A new bootstrap file will be written on next startup.
+
+**Permission denied for a tool:**
+Run `TestPermissions` to see which permissions your session holds, then verify the required permission against the role table above.
