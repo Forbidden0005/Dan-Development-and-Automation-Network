@@ -1965,6 +1965,27 @@ class TestCodeToolsBundle:
         assert "Optional feature bundles:" in report
         assert "py -m pip install -r requirements-ml.txt" in report
 
+    def test_check_deps_separates_build_only_guidance(self, tmp_path, monkeypatch):
+        import code_tools
+
+        (tmp_path / "requirements.txt").write_text("-r requirements-core.txt\n", encoding="utf-8")
+        (tmp_path / "requirements-core.txt").write_text("httpx\n", encoding="utf-8")
+        (tmp_path / "requirements-packaging.txt").write_text("pyinstaller\n", encoding="utf-8")
+
+        monkeypatch.setattr(code_tools, "_python_cmd", lambda: ["py"])
+        monkeypatch.setattr(
+            code_tools.importlib.util,
+            "find_spec",
+            lambda name: object() if name == "httpx" else None,
+        )
+
+        report = code_tools.check_deps(str(tmp_path))
+
+        assert "Runtime dependencies are installed." in report
+        assert "Build missing:   1" in report
+        assert "Missing build-only packages:" in report
+        assert "Install packaging tooling with: py -m pip install -r requirements-packaging.txt" in report
+
     def test_register_code_tools_registers_expected_names(self, monkeypatch):
         import code_tools
 

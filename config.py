@@ -1,6 +1,7 @@
 """Dan configuration and constants."""
 
 import os
+import sys
 from pathlib import Path
 
 # Branding
@@ -8,9 +9,25 @@ APP_NAME = "Dan"
 APP_VERSION = "2.5.1"
 APP_TAGLINE = "Development Automation Network"
 
-# Paths
-USER_DATA_DIR = Path.home() / "Dan"
-PROJECT_DATA_DIR = Path("Dan")
+# ── Data directories ──────────────────────────────────────────────────────────
+# User-global state (knowledge, sessions, auth) lives under the OS-appropriate
+# per-user roaming-data directory so it survives reinstalls and is not confused
+# with the project folder.
+#
+#   Windows : %APPDATA%\Dan\   (C:\Users\<name>\AppData\Roaming\Dan\)
+#   Other   : ~/.dan/
+#
+# Project-local state (per-repo knowledge, project index, auth cache) lives in
+# .dan/ inside the working directory. This name avoids colliding with the
+# Dan.py entry-point script and the Dan/ folder that older builds used; .dan/
+# is already listed in .gitignore so it is never accidentally committed.
+if sys.platform == "win32":
+    _appdata = Path(os.environ.get("APPDATA", str(Path.home())))
+    USER_DATA_DIR: Path = _appdata / "Dan"
+else:
+    USER_DATA_DIR = Path.home() / ".dan"
+
+PROJECT_DATA_DIR: Path = Path(".dan")
 
 # Provider config
 DEFAULT_PROVIDER = os.environ.get("DAN_PROVIDER", "ollama")

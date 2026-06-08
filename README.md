@@ -24,6 +24,8 @@ This repository is in a transition phase: the runtime works, tests pass, and cor
 
 ## Quick Start
 
+**Requires:** Python 3.11+ · Windows 10 (build 19041+) or Windows 11
+
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -77,11 +79,45 @@ python -m ruff check .
 python scripts/repo_health.py
 ```
 
+## Windows Packaging
+
+Dan now has a repeatable PyInstaller-based portable build path for Windows.
+
+Install packaging dependencies:
+
+```powershell
+python -m pip install -r requirements-packaging.txt
+```
+
+Build the supported desktop shell:
+
+```powershell
+python scripts/build_windows.py --target gui
+```
+
+Build the CLI companion:
+
+```powershell
+python scripts/build_windows.py --target cli
+```
+
+Preview the exact commands without building:
+
+```powershell
+python scripts/build_windows.py --target all --dry-run
+```
+
+Portable output is written under `dist/windows/`. The current packaging path targets portable `onedir` builds, not an installer or MSIX package yet.
+The default core build excludes heavyweight optional ML and vision stacks unless you opt into `--with-ml` or `--with-vision`.
+GitHub Actions now includes a Windows packaging job that builds and verifies the supported GUI artifact.
+That Windows packaging job also builds the CLI companion and runs a packaged CLI smoke test against the built executable.
+
 ## Repository Map
 
 - [ONBOARDING.md](/C:/Users/tyler/Desktop/Dan/ONBOARDING.md): setup, reading order, first-run workflow
 - [PROJECT_INTEGRITY.md](/C:/Users/tyler/Desktop/Dan/PROJECT_INTEGRITY.md): mandatory decision gate for every task
 - [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md): canonical direction, backlog, and completed work
+- [RELEASE.md](/C:/Users/tyler/Desktop/Dan/RELEASE.md): version scheme, release steps, and build checklist
 - [CODEX.md](/C:/Users/tyler/Desktop/Dan/CODEX.md): strict operating instructions for Codex sessions
 
 ## Immediate Production Gaps
@@ -91,6 +127,7 @@ python scripts/repo_health.py
 - Windows packaging and installer strategy are not yet defined.
 - Operational docs existed in conflicting versions and required reset.
 - Several historical analysis documents should be archived or reorganized instead of living at repo root forever.
+- The current packaging flow produces portable builds; installer work is still pending.
 
 ## Rule
 

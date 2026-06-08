@@ -110,3 +110,54 @@ def test_environment_doctor_scopes_runtime_install_guidance(tmp_path, monkeypatc
     assert "py -m pip install anthropic openai" in report
     assert "py -m pip install aiofiles ddgs" in report
     assert "py -m pip install customtkinter" in report
+
+
+def test_startup_doctor_treats_packaging_requirements_as_build_only(tmp_path, monkeypatch):
+    import code_tools
+
+    (tmp_path / "requirements-core.txt").write_text("httpx>=0.27.0\n", encoding="utf-8")
+    (tmp_path / "requirements-packaging.txt").write_text("pyinstaller>=6.10.0\n", encoding="utf-8")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "demo.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_demo.py").write_text("from scripts import demo\n", encoding="utf-8")
+    _spec_table(monkeypatch, {"httpx"})
+
+    report = code_tools.startup_doctor(str(tmp_path), provider="ollama", target="cli")
+
+    assert "Runtime missing:      0" in report
+    assert "Missing build-only packages:" in report
+    assert "pyinstaller" in report
+    assert "Imported packages are not declared in requirements: scripts" not in report
+
+
+def test_environment_doctor_reports_build_only_packages_separately(tmp_path, monkeypatch):
+    import code_tools
+
+    (tmp_path / "requirements-core.txt").write_text("httpx>=0.27.0\n", encoding="utf-8")
+    (tmp_path / "requirements-packaging.txt").write_text("pyinstaller>=6.10.0\n", encoding="utf-8")
+    _spec_table(monkeypatch, {"httpx"})
+    monkeypatch.setattr(code_tools, "_python_cmd", lambda: ["py"])
+
+    report = code_tools.environment_doctor(str(tmp_path), provider="ollama")
+
+    assert "Build missing:         1" in report
+    assert "Missing build-only packages:" in report
+    assert "Suggested build fix:" in report
+    assert "py -m pip install -r requirements-packaging.txt" in report
+
+
+def test_startup_doctor_hides_dev_and_build_noise_when_packaged(tmp_path, monkeypatch):
+    import code_tools
+
+    (tmp_path / "requirements-core.txt").write_text("httpx>=0.27.0\naiofiles>=23.0.0\n", encoding="utf-8")
+    (tmp_path / "requirements-dev.txt").write_text("pytest>=8.0.0\n", encoding="utf-8")
+    (tmp_path / "requirements-packaging.txt").write_text("pyinstaller>=6.10.0\n", encoding="utf-8")
+    _spec_table(monkeypatch, {"httpx"})
+    monkeypatch.setattr(code_tools.sys, "frozen", True, raising=False)
+
+    report = code_tools.startup_doctor(str(tmp_path), provider="ollama", target="cli")
+
+    assert "Missing development packages:" not in report
+    assert "Missing build-only packages:" not in report
+    assert "pyinstaller" not in report

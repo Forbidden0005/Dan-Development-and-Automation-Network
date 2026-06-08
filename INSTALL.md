@@ -2,7 +2,8 @@
 
 ## Prerequisites
 
-- Python 3.9 or higher
+- **Windows 10 (build 19041+) or Windows 11** — Dan is a Windows-first product.
+- **Python 3.11 or higher** — required for `tomllib` (stdlib) and `X | Y` union type hints.
 - pip (Python package installer)
 - An API key from one of the supported providers
 
@@ -130,6 +131,52 @@ Try asking:
 
 ---
 
+## Data Directories
+
+Dan stores persistent state in two locations:
+
+### User-global data — `%APPDATA%\Dan\`
+
+```
+C:\Users\<name>\AppData\Roaming\Dan\
+```
+
+This directory holds state that persists across installs and is not project-specific:
+- **Knowledge** — ingested documents and embeddings
+- **Sessions** — saved chat history
+- **Auth cache** — provider credential metadata (not API keys)
+
+Dan creates this directory automatically on first run. To find it quickly:
+
+```powershell
+explorer %APPDATA%\Dan
+```
+
+### Project-local data — `.dan\`
+
+```
+<your-project-root>\.dan\
+```
+
+This directory holds per-repository state:
+- **Project index** — file structure and symbol cache for the open project
+- **Auth cache** — per-project credential overrides
+- **Local knowledge** — project-specific ingested docs
+
+`.dan\` is listed in `.gitignore` and is never committed. It is recreated automatically if deleted.
+
+### Logs
+
+Dan logs to stderr by default. To redirect to a file:
+
+```powershell
+python Dan.py 2> dan.log
+```
+
+No log files are written automatically. Startup errors appear in the terminal before the GUI window opens.
+
+---
+
 ## Troubleshooting
 
 ### "ModuleNotFoundError: No module named 'customtkinter'"
@@ -163,7 +210,7 @@ sudo pacman -S tk
 Try:
 1. Restart the application
 2. Check terminal for error messages
-3. Verify your Python version: `python --version` (must be 3.9+)
+3. Verify your Python version: `python --version` (must be 3.11+)
 
 ### Can't install dependencies on Windows
 
@@ -205,6 +252,50 @@ pip install pandas scikit-learn joblib
 # Additional LLM providers
 pip install openai  # For GPT models
 ```
+
+---
+
+## Windows Portable Build
+
+Dan now has a repeatable PyInstaller packaging path for Windows.
+
+Install packaging dependencies:
+
+```powershell
+python -m pip install -r requirements-packaging.txt
+```
+
+Build the supported desktop shell:
+
+```powershell
+python scripts/build_windows.py --target gui
+```
+
+Build both desktop and CLI artifacts:
+
+```powershell
+python scripts/build_windows.py --target all
+```
+
+Print the exact PyInstaller commands without building:
+
+```powershell
+python scripts/build_windows.py --target all --dry-run
+```
+
+Output layout:
+
+- `dist/windows/Dan/` for the supported GUI build
+- `dist/windows/DanCLI/` for the CLI build
+
+Notes:
+
+- The current release path is portable `onedir`, not a Windows installer.
+- `--with-vision` and `--with-ml` are opt-in because those bundles depend on optional packages.
+- The default core build excludes heavyweight optional ML and vision stacks unless you opt into them.
+- Build from the repository root on Windows with the runtime dependencies already installed.
+- The CI pipeline now performs a real Windows GUI package build and verifies the packaged output layout.
+- The CI pipeline also builds the CLI package and runs a packaged `--doctor --target cli` smoke test.
 
 ---
 
