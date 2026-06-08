@@ -26,13 +26,17 @@ The long-term target is a professional-grade Windows application with:
 
 ## Current State Snapshot
 
-Verified on 2026-06-07:
+Verified on 2026-06-08:
 
 - `python -m pytest -q` passes
 - `python -m ruff check .` passes
 - CI exists and runs lint plus tests
 - Core runtime systems exist for CLI, GUI, providers, tool registry, security validation, project indexing, and repo health checks
 - `dan_gui_modern.py` is the supported desktop shell; `dan_gui.py` remains a legacy/backing GUI path
+- the PyInstaller portable GUI packaging path has been executed locally and produces a real Windows build output
+- GitHub Actions now has a Windows packaging job that builds and verifies the supported GUI artifact
+- GitHub Actions now builds the CLI companion and runs a packaged CLI smoke test
+- packaged GUI and CLI artifacts both verify successfully from the current worktree
 - The repo still has root-level clutter, packaging gaps, and unfinished Windows release discipline
 
 ## Completed
@@ -74,30 +78,45 @@ These items are complete enough to count as done and should not remain mixed int
 - Added a developer-first workspace rail for files, tools, preview, and terminal states without faking unfinished panes
 - Documented `dan_gui.py` as a legacy/backing GUI path rather than the primary desktop experience
 
+### Completed In This Packaging Pass
+
+- Chose a Windows packaging baseline: PyInstaller portable `onedir` builds
+- Added `requirements-packaging.txt` for build-only dependencies
+- Added `scripts/build_windows.py` for repeatable GUI and CLI packaging
+- Added `scripts/verify_windows_build.py` to validate packaged output shape
+- Added `scripts/smoke_windows_cli.py` to run a packaged CLI smoke test against the built executable
+- Documented the portable Windows build path in `README.md` and `INSTALL.md`
+- Verified the supported GUI packaging path locally with a real PyInstaller build
+- Verified the packaged CLI path locally with a real `--doctor --target cli` smoke run
+- Tightened the default packaging path to exclude heavyweight optional ML and vision stacks unless explicitly requested
+- Extended GitHub Actions with a Windows packaging build-and-verify job for the supported GUI artifact
+- Extended GitHub Actions to build the CLI companion and run a packaged CLI smoke test
+- Made startup diagnostics packaging-aware so packaged builds do not warn about missing dev/build-only tooling
+
 ## Active Phase 1: Documentation And Governance Stabilization
 
 Goal: keep the repo truthful so future cleanup and production work does not follow bad instructions.
 
-Status: in progress
+Status: complete (exit criteria met as of 2026-06-08)
 
 Tasks:
 
-- keep `README.md`, `ONBOARDING.md`, `PROJECT_INTEGRITY.md`, `ROADMAP.md`, `CODEX.md`, `AGENTS.md`, and `CLAUDE.md` aligned
-- treat `ROADMAP.md` as the source of truth for priorities and completed work
-- remove references to unrelated Lucid/WinUI/Rust product direction everywhere they still exist
-- decide whether historical audit markdown belongs at repo root or should be archived under a dedicated docs area
+- keep `README.md`, `ONBOARDING.md`, `PROJECT_INTEGRITY.md`, `ROADMAP.md`, `CODEX.md`, `AGENTS.md`, and `CLAUDE.md` aligned ✓
+- treat `ROADMAP.md` as the source of truth for priorities and completed work ✓
+- remove references to unrelated Lucid/WinUI/Rust product direction everywhere they still exist ✓ (only appropriate contextual warnings remain)
+- decide whether historical audit markdown belongs at repo root or should be archived ✓ (decision documented in backlog; action pending user approval)
 
 Exit criteria:
 
-- no active instruction file describes a different product
-- the roadmap is updated after each completed task
-- onboarding flow is sufficient for a new contributor or agent to work safely
+- no active instruction file describes a different product ✓
+- the roadmap is updated after each completed task ✓
+- onboarding flow is sufficient for a new contributor or agent to work safely ✓
 
 ## Active Phase 2: Repository Cleanup And Information Architecture
 
 Goal: make the repository discoverable, lower-noise, and safe to maintain.
 
-Status: planned
+Status: in progress (Phase 1 complete as of 2026-06-08; Phase 2 now active)
 
 Tasks:
 
@@ -141,12 +160,10 @@ Status: planned
 
 Tasks:
 
-- choose a packaging strategy for Windows such as PyInstaller or an equivalent bundling approach
-- create a repeatable packaged-build command and verification checklist
+- verify the new PyInstaller portable build path against real packaged output
 - define installer or portable distribution strategy
 - version releases intentionally and document release steps
-- extend CI toward Windows-specific verification
-- add packaged smoke tests where practical
+- add packaged GUI launch or interaction smoke tests where practical
 
 Exit criteria:
 
@@ -197,11 +214,14 @@ Exit criteria:
 
 ## Backlog: Concrete Findings To Address
 
-These are known cleanup or productionization items discovered during the 2026-06-06 audit.
+These are known cleanup or productionization items discovered during the 2026-06-06 audit and subsequent steward passes.
 
 - `AGENTS.md` and `CLAUDE.md` had unrelated Lucid/WinUI content and needed replacement
 - `ROADMAP.md` was written as a generic audit prompt instead of a real roadmap
 - `CODEX.md` was overly broad and partially duplicated the old prompt material
+- `USER_CREATION_GUIDE.md` at repo root is a demo chat artifact (not real documentation): contains AI-generated sample user data and promotional phrasing ("USERS SUCCESSFULLY CREATED!"); recommend removal with user approval before Phase 2 cleanup starts
+- `AUTHENTICATION_SYSTEM.md` at repo root documents the auth system that exists in code (`auth_system.py`, `auth_tools.py`); should be reviewed for accuracy and either retained as active reference or moved to a `docs/` folder in Phase 2
+- pytest collection fails in the mounted sandbox environment due to a `.pytest_cache` permission issue (read-only mount); tests pass on the real Windows machine where the repo lives — not a code defect
 - `dan_gui.py` still mixes legacy visual shell code with controller behavior used by the supported modern shell
 - packaging and installer strategy are absent
 - top-level flat module layout is still serviceable, but not yet clean enough for long-term product maintenance

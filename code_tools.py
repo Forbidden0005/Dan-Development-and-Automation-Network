@@ -30,6 +30,7 @@ _SKIP_DIRS = {
 }
 _PYTHON_CANDIDATES = ("python", "py")
 _DEV_REQUIREMENT_SOURCES = {"requirements-dev.txt"}
+_BUILD_REQUIREMENT_SOURCES = {"requirements-packaging.txt"}
 _OPTIONAL_REQUIREMENT_SOURCES = {"requirements-ml.txt", "requirements-vision.txt"}
 _PROVIDER_RUNTIME_REQUIREMENTS = {
     "anthropic": ["anthropic"],
@@ -125,6 +126,18 @@ def _python_cmd() -> list[str]:
 def _python_module_cmd(module_name: str, *args: str) -> list[str]:
     """Build a command that runs an installed Python module in this interpreter."""
     return _python_cmd() + ["-m", module_name, *args]
+
+
+def _is_packaged_runtime() -> bool:
+    """Return True when diagnostics are running from a packaged executable."""
+    if bool(getattr(sys, "frozen", False)) or hasattr(sys, "_MEIPASS"):
+        return True
+
+    executable_name = Path(sys.executable or "").name.lower()
+    if executable_name in {"dan.exe", "dancli.exe"}:
+        return True
+
+    return False
 
 
 def _bounded_timeout(timeout: int, default: int = 120) -> int:
@@ -230,9 +243,13 @@ def _declared_dependency_names(root: Path) -> set[str]:
 
 def _local_module_names(root: Path) -> set[str]:
     names = {path.stem for path in root.glob("*.py")}
-    names.update(
-        path.name for path in root.iterdir() if path.is_dir() and (path / "__init__.py").exists()
-    )
+    for path in root.iterdir():
+        if not path.is_dir():
+            continue
+        if path.name in _SKIP_DIRS:
+            continue
+        if (path / "__init__.py").exists() or any(path.rglob("*.py")):
+            names.add(path.name)
     return names
 
 
@@ -308,21 +325,29 @@ def _detect_active_provider(provider: str = "") -> str:
 
 def _partition_missing_dependencies(
     missing: list[tuple[str, str]],
-) -> tuple[list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
-    """Split missing packages into runtime, development, and optional groups."""
+) -> tuple[
+    list[tuple[str, str]],
+    list[tuple[str, str]],
+    list[tuple[str, str]],
+    list[tuple[str, str]],
+]:
+    """Split missing packages into runtime, development, optional, and build-only groups."""
     runtime_missing: list[tuple[str, str]] = []
     dev_missing: list[tuple[str, str]] = []
     optional_missing: list[tuple[str, str]] = []
+    build_missing: list[tuple[str, str]] = []
 
     for pkg, source in missing:
         if source in _OPTIONAL_REQUIREMENT_SOURCES:
             optional_missing.append((pkg, source))
+        elif source in _BUILD_REQUIREMENT_SOURCES:
+            build_missing.append((pkg, source))
         elif source in _DEV_REQUIREMENT_SOURCES:
             dev_missing.append((pkg, source))
         else:
             runtime_missing.append((pkg, source))
 
-    return runtime_missing, dev_missing, optional_missing
+    return runtime_missing, dev_missing, optional_missing, build_missing
 
 
 def _group_missing_by_source(missing: list[tuple[str, str]]) -> dict[str, list[str]]:
@@ -428,6 +453,7 @@ def _collect_environment_diagnostics(
     provider: str = "",
     target: str = "cli",
 ) -> dict[str, object]:
+    packaged_runtime = _is_packaged_runtime()
     active_provider = _detect_active_provider(provider)
     startup_target = target.strip().lower() or "cli"
     if startup_target not in _STARTUP_TARGET_IMPORTS:
@@ -435,7 +461,9 @@ def _collect_environment_diagnostics(
 
     installed, missing = _check_declared_dependencies(root)
     undeclared = _find_undeclared_dependencies(root)
-    runtime_missing, dev_missing, optional_missing = _partition_missing_dependencies(missing)
+    runtime_missing, dev_missing, optional_missing, build_missing = _partition_missing_dependencies(
+        missing
+    )
     startup_runtime_missing, feature_scoped_runtime_missing, general_runtime_missing = (
         _classify_runtime_missing(runtime_missing, active_provider, startup_target)
     )
@@ -522,10 +550,15 @@ def _collect_environment_diagnostics(
     if active_provider == "ollama":
         notes.append(f"Ollama URL: {os.environ.get('OLLAMA_URL', 'http://localhost:11434')}")
         notes.append("Ollama server health is not probed here; verify it is running before use.")
-    if dev_missing:
+    if dev_missing and not packaged_runtime:
         notes.append(
             f"Development tools not installed: {len(dev_missing)} "
             "(tests, linting, and formatting will be limited until installed)."
+        )
+    if build_missing and not packaged_runtime:
+        notes.append(
+            f"Build-only tools not installed: {len(build_missing)} "
+            "(packaging and release automation will be limited until installed)."
         )
     if optional_missing:
         notes.append(
@@ -542,6 +575,7 @@ def _collect_environment_diagnostics(
         "root": root,
         "provider": active_provider,
         "target": startup_target,
+        "packaged_runtime": packaged_runtime,
         "installed": installed,
         "missing": missing,
         "runtime_missing": runtime_missing,
@@ -550,6 +584,7 @@ def _collect_environment_diagnostics(
         "general_runtime_missing": general_runtime_missing,
         "dev_missing": dev_missing,
         "optional_missing": optional_missing,
+        "build_missing": build_missing,
         "undeclared": undeclared,
         "provider_missing": provider_missing,
         "provider_only_missing": provider_only_missing,
@@ -579,9 +614,11 @@ def startup_doctor(path: str = ".", provider: str = "", target: str = "cli") -> 
     runtime_missing = diagnostics["runtime_missing"]
     feature_scoped_runtime_missing = diagnostics["feature_scoped_runtime_missing"]
     dev_missing = diagnostics["dev_missing"]
+    build_missing = diagnostics["build_missing"]
     undeclared = diagnostics["undeclared"]
     notes = diagnostics["notes"]
     active_provider = diagnostics["provider"]
+    packaged_runtime = diagnostics["packaged_runtime"]
     python_cmd = " ".join(_python_cmd())
     startup_runtime_missing = diagnostics["startup_runtime_missing"]
     provider_only_missing = diagnostics["provider_only_missing"]
@@ -619,9 +656,14 @@ def startup_doctor(path: str = ".", provider: str = "", target: str = "cli") -> 
             for pkg, source in packages[:20]:
                 lines.append(f"    - {pkg}  ({source})")
 
-    if dev_missing:
+    if dev_missing and not packaged_runtime:
         lines.append("\nMissing development packages:")
         for pkg, source in dev_missing[:20]:
+            lines.append(f"  - {pkg}  ({source})")
+
+    if build_missing and not packaged_runtime:
+        lines.append("\nMissing build-only packages:")
+        for pkg, source in build_missing[:20]:
             lines.append(f"  - {pkg}  ({source})")
 
     if undeclared:
@@ -641,9 +683,13 @@ def startup_doctor(path: str = ".", provider: str = "", target: str = "cli") -> 
             "\nSuggested startup fix:\n"
             f"  {python_cmd} -m pip install {' '.join(startup_install_targets or ['-r requirements-core.txt'])}"
         )
-        if dev_missing:
+        if dev_missing and not packaged_runtime:
             lines.append(
                 f"  Optional dev tooling: {python_cmd} -m pip install -r requirements-dev.txt"
+            )
+        if build_missing and not packaged_runtime:
+            lines.append(
+                f"  Optional packaging tooling: {python_cmd} -m pip install -r requirements-packaging.txt"
             )
 
     return "\n".join(lines)
@@ -662,6 +708,7 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
     general_runtime_missing = diagnostics["general_runtime_missing"]
     dev_missing = diagnostics["dev_missing"]
     optional_missing = diagnostics["optional_missing"]
+    build_missing = diagnostics["build_missing"]
     undeclared = diagnostics["undeclared"]
     provider_missing = diagnostics["provider_missing"]
     has_tests = diagnostics["has_tests"]
@@ -679,6 +726,7 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
         f"  Runtime missing:       {len(runtime_missing)}",
         f"  Dev missing:           {len(dev_missing)}",
         f"  Optional missing:      {len(optional_missing)}",
+        f"  Build missing:         {len(build_missing)}",
         f"  Startup blockers:      {len(blockers)}",
         f"  Advisories:            {len(advisories)}",
     ]
@@ -710,6 +758,11 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
     if dev_missing:
         lines.append("\nMissing development packages:")
         for pkg, source in dev_missing[:20]:
+            lines.append(f"  - {pkg}  ({source})")
+
+    if build_missing:
+        lines.append("\nMissing build-only packages:")
+        for pkg, source in build_missing[:20]:
             lines.append(f"  - {pkg}  ({source})")
 
     if undeclared:
@@ -747,9 +800,18 @@ def environment_doctor(path: str = ".", provider: str = "") -> str:
             lines.append(
                 f"  Or install the full dev toolchain: {python_cmd} -m pip install -r requirements-dev.txt"
             )
+        if build_missing:
+            lines.append(
+                f"  Packaging toolchain: {python_cmd} -m pip install -r requirements-packaging.txt"
+            )
     elif dev_missing:
         lines.append(
             "\nSuggested dev fix:\n" f"  {python_cmd} -m pip install -r requirements-dev.txt"
+        )
+    elif build_missing:
+        lines.append(
+            "\nSuggested build fix:\n"
+            f"  {python_cmd} -m pip install -r requirements-packaging.txt"
         )
 
     return "\n".join(lines)
@@ -1322,7 +1384,9 @@ def check_deps(path: str = ".") -> str:
         )
     installed, missing = _check_declared_dependencies(root)
     undeclared = _find_undeclared_dependencies(root)
-    runtime_missing, dev_missing, optional_missing = _partition_missing_dependencies(missing)
+    runtime_missing, dev_missing, optional_missing, build_missing = _partition_missing_dependencies(
+        missing
+    )
     optional_missing_by_source = _group_missing_by_source(optional_missing)
     python_cmd = " ".join(_python_cmd())
 
@@ -1333,6 +1397,7 @@ def check_deps(path: str = ".") -> str:
         f"  Runtime missing: {len(runtime_missing)}",
         f"  Dev missing:     {len(dev_missing)}",
         f"  Optional missing:{len(optional_missing)}",
+        f"  Build missing:   {len(build_missing)}",
         f"  Undeclared imports: {len(undeclared)}",
     ]
 
@@ -1354,6 +1419,14 @@ def check_deps(path: str = ".") -> str:
             f"\nInstall dev tooling with: {python_cmd} -m pip install -r requirements-dev.txt"
         )
 
+    if build_missing:
+        lines.append("\nMissing build-only packages:")
+        for pkg, src in build_missing:
+            lines.append(f"  x  {pkg}  (from {src})")
+        lines.append(
+            f"\nInstall packaging tooling with: {python_cmd} -m pip install -r requirements-packaging.txt"
+        )
+
     if optional_missing:
         lines.append("\nMissing optional feature packages:")
         for pkg, src in optional_missing:
@@ -1362,7 +1435,7 @@ def check_deps(path: str = ".") -> str:
         for source in optional_missing_by_source:
             lines.append(f"  - {source}: {python_cmd} -m pip install -r {source}")
     else:
-        if not runtime_missing and not dev_missing:
+        if not runtime_missing and not dev_missing and not build_missing:
             lines.append("\nAll declared dependencies are installed.")
 
     if undeclared:

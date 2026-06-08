@@ -77,6 +77,39 @@ python -m ruff check .
 python scripts/repo_health.py
 ```
 
+## Windows Packaging
+
+Dan now has a repeatable PyInstaller-based portable build path for Windows.
+
+Install packaging dependencies:
+
+```powershell
+python -m pip install -r requirements-packaging.txt
+```
+
+Build the supported desktop shell:
+
+```powershell
+python scripts/build_windows.py --target gui
+```
+
+Build the CLI companion:
+
+```powershell
+python scripts/build_windows.py --target cli
+```
+
+Preview the exact commands without building:
+
+```powershell
+python scripts/build_windows.py --target all --dry-run
+```
+
+Portable output is written under `dist/windows/`. The current packaging path targets portable `onedir` builds, not an installer or MSIX package yet.
+The default core build excludes heavyweight optional ML and vision stacks unless you opt into `--with-ml` or `--with-vision`.
+GitHub Actions now includes a Windows packaging job that builds and verifies the supported GUI artifact.
+That Windows packaging job also builds the CLI companion and runs a packaged CLI smoke test against the built executable.
+
 ## Repository Map
 
 - [ONBOARDING.md](/C:/Users/tyler/Desktop/Dan/ONBOARDING.md): setup, reading order, first-run workflow
@@ -91,6 +124,7 @@ python scripts/repo_health.py
 - Windows packaging and installer strategy are not yet defined.
 - Operational docs existed in conflicting versions and required reset.
 - Several historical analysis documents should be archived or reorganized instead of living at repo root forever.
+- The current packaging flow produces portable builds; installer work is still pending.
 
 ## Rule
 

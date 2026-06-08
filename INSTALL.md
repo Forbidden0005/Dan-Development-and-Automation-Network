@@ -208,6 +208,50 @@ pip install openai  # For GPT models
 
 ---
 
+## Windows Portable Build
+
+Dan now has a repeatable PyInstaller packaging path for Windows.
+
+Install packaging dependencies:
+
+```powershell
+python -m pip install -r requirements-packaging.txt
+```
+
+Build the supported desktop shell:
+
+```powershell
+python scripts/build_windows.py --target gui
+```
+
+Build both desktop and CLI artifacts:
+
+```powershell
+python scripts/build_windows.py --target all
+```
+
+Print the exact PyInstaller commands without building:
+
+```powershell
+python scripts/build_windows.py --target all --dry-run
+```
+
+Output layout:
+
+- `dist/windows/Dan/` for the supported GUI build
+- `dist/windows/DanCLI/` for the CLI build
+
+Notes:
+
+- The current release path is portable `onedir`, not a Windows installer.
+- `--with-vision` and `--with-ml` are opt-in because those bundles depend on optional packages.
+- The default core build excludes heavyweight optional ML and vision stacks unless you opt into them.
+- Build from the repository root on Windows with the runtime dependencies already installed.
+- The CI pipeline now performs a real Windows GUI package build and verifies the packaged output layout.
+- The CI pipeline also builds the CLI package and runs a packaged `--doctor --target cli` smoke test.
+
+---
+
 ## Updating
 
 To update Dan to a newer version:

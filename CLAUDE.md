@@ -1,32 +1,91 @@
-# Dan Project Instructions
+# CODEX.md
 
-Read [PROJECT_INTEGRITY.md](/C:/Users/tyler/Desktop/Dan/PROJECT_INTEGRITY.md) and [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md) before every task.
+This file defines how Codex must operate in this repository.
 
-## Non-Negotiable Rules
+## Mandatory First Step
 
-- `ROADMAP.md` is the canonical project direction.
-- Every task must comply with the roadmap.
-- After every completed task, update `ROADMAP.md`.
-- If a request conflicts with the roadmap or degrades the project, stop and explain why.
-- Do not delete or broadly move files without explicit approval.
+Before every single task, change, edit, cleanup, refactor, rename, deletion, review, or roadmap update:
 
-## Project Identity
+1. Read [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md)
+2. Read [PROJECT_INTEGRITY.md](/C:/Users/tyler/Desktop/Dan/PROJECT_INTEGRITY.md)
+3. Confirm the requested work matches the roadmap and does not violate project integrity
 
-Dan is a local-first Windows development assistant built in Python. It has a CLI, desktop GUI, provider adapters, secure local tooling, project indexing, and persistent local state.
+If you have not checked the roadmap first, you are not ready to act.
 
-It is not the Lucid WinUI/Rust application that older repo instructions described. Do not follow or reintroduce that drift.
+## Mandatory Last Step
 
-## Working Standard
+After every completed task in this repository:
 
-- Production-grade over placeholder
-- Explicit over clever
-- Additive over destructive
-- Verified over assumed
-- Small safe changes over broad rewrites
+1. Update [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md)
+2. Mark newly completed work in the `Completed` section or move completed items out of active phases
+3. Keep the roadmap truthful
 
-## Required Behavior
+Leaving the roadmap stale is a process failure.
 
-- Inspect the relevant code before changing it.
-- Verify commands before citing them.
-- Record uncertain cleanup items in the roadmap instead of guessing.
-- Keep docs coherent with the actual codebase.
+## Project Posture
+
+Dan is a local-first Windows development assistant built in Python. Treat it like a long-lived desktop product, not a prototype.
+
+Priorities:
+
+- trust
+- explicit behavior
+- secure local execution
+- maintainability
+- Windows usability
+- repeatable verification
+
+Do not steer the project toward:
+
+- vague “AI magic”
+- uncontrolled autonomy
+- speculative rewrites
+- cloud dependence without a reason
+- release claims that are not backed by verification
+
+## Operating Rules
+
+- Inspect real files before changing them.
+- Verify before asserting.
+- Prefer small, low-risk changes.
+- Preserve working behavior unless it is clearly wrong.
+- Do not invent missing architecture.
+- Do not delete uncertain files without approval.
+- Do not make packaging, dependency, auth, or structural changes casually.
+- If docs and code disagree, resolve the mismatch or document it explicitly.
+
+## Required Task Framing For Non-Trivial Work
+
+Before a non-trivial change, briefly state:
+
+- regression risk
+- architectural fit
+- failure or safety implications
+- maintainability impact
+- risk level
+
+Then make the smallest safe change.
+
+## Cleanup Rules
+
+For repository cleanup:
+
+- prefer archive or quarantine over deletion
+- do not remove historical artifacts unless their lack of value is verified
+- record uncertain cleanup candidates in the roadmap backlog
+- keep filenames, folder roles, and ownership explicit
+
+## Production Readiness Rules
+
+Do not call Dan production-ready just because tests pass.
+
+Production-ready here means at minimum:
+
+- docs are coherent
+- Windows packaging is defined
+- startup behavior is predictable
+- security boundaries are explicit
+- release verification is repeatable
+- the roadmap reflects reality
+
+Until then, say exactly what is done and what is not.
