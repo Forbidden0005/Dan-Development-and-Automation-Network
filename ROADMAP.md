@@ -275,7 +275,7 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 
 ### Release Infrastructure
 
-- Windows installer (MSIX / Inno Setup) — not yet started
+- ~~Windows installer — not yet started~~ ✓ Inno Setup path started (2026-06-08 steward pass 9): `installer/Dan.iss` created; `scripts/build_windows.py` updated with `--installer` / `--installer-only` flags; `INSTALL.md` documents the full build workflow. Remaining gaps: `assets/dan_icon.ico` does not exist yet (installer falls back gracefully if commented out); CI job to build and artifact-upload the installer not yet added
 - Automated release artifact upload in GitHub Actions — not yet started
 - Signed Windows executables — not yet started
 

@@ -290,12 +290,56 @@ Output layout:
 
 Notes:
 
-- The current release path is portable `onedir`, not a Windows installer.
 - `--with-vision` and `--with-ml` are opt-in because those bundles depend on optional packages.
 - The default core build excludes heavyweight optional ML and vision stacks unless you opt into them.
 - Build from the repository root on Windows with the runtime dependencies already installed.
 - The CI pipeline now performs a real Windows GUI package build and verifies the packaged output layout.
 - The CI pipeline also builds the CLI package and runs a packaged `--doctor --target cli` smoke test.
+
+---
+
+## Windows Installer Build (Inno Setup)
+
+The repository ships an Inno Setup script at `installer/Dan.iss` that wraps the
+PyInstaller portable bundle into a proper Windows installer `.exe`.
+
+### Prerequisites
+
+1. **Build the portable bundle first** (see above).
+2. **Install Inno Setup 6.x** — download from <https://jrsoftware.org/isdl.php>.
+   The build script auto-detects it at the default install location.
+
+### Build installer + bundle in one step
+
+```powershell
+python scripts/build_windows.py --target gui --installer
+```
+
+### Build the installer from an existing bundle
+
+```powershell
+python scripts/build_windows.py --installer-only
+```
+
+### Output
+
+```
+dist/installer/Dan-<version>-setup.exe
+```
+
+### What the installer does
+
+- Installs to `%LOCALAPPDATA%\Dan\` by default (no admin rights required).
+- Creates a Start Menu group with a shortcut and an uninstaller entry.
+- Offers an optional Desktop shortcut.
+- Offers optional PATH registration for the CLI companion (`DanCLI.exe`).
+- Upgrades gracefully — the stable `AppId` GUID in `Dan.iss` lets Windows
+  detect previous installs and offer an upgrade rather than a parallel install.
+
+### Icon
+
+The installer references `assets\dan_icon.ico`.  If this file does not exist,
+comment out the `SetupIconFile` line in `installer\Dan.iss` before compiling.
 
 ---
 
