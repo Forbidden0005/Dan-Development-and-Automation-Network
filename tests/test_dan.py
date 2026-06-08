@@ -1197,6 +1197,51 @@ class TestSecureTools:
             set(registered)
         )
 
+    def test_register_secure_core_tools_assigns_correct_safety_levels(self, monkeypatch):
+        """Verify that secure-core tool registrations carry the expected safety levels.
+
+        Mirrors test_register_core_tools_assigns_correct_safety_levels for tools.py.
+        The confirmation gate fires for Level 3; write-side tools must be Level 2;
+        read-only tools must be Level 1.  Also verifies the parameters dict is a
+        proper JSON Schema object (not a flat property map) so to_api_schema() would
+        produce a valid Anthropic input_schema.
+        """
+        import tools_secure
+
+        recorded: dict[str, dict] = {}
+        monkeypatch.setattr(
+            tools_secure.registry,
+            "register_tool",
+            lambda **kwargs: recorded.__setitem__(
+                kwargs["name"],
+                {"safety_level": kwargs.get("safety_level", 1), "parameters": kwargs.get("parameters", {})},
+            ),
+        )
+
+        tools_secure.register_secure_core_tools()
+
+        # Level 3 — elevated execution; must fire the confirmation gate
+        assert recorded["Bash"]["safety_level"] == 3, "Bash must be Level 3"
+
+        # Level 2 — standard writes
+        for name in ("Write", "Edit"):
+            assert recorded[name]["safety_level"] == 2, f"{name} must be Level 2"
+
+        # Level 1 — read-only, no side effects
+        for name in ("Read", "Glob", "Grep", "ListDir"):
+            assert recorded[name]["safety_level"] == 1, f"{name} must be Level 1"
+
+        # Each parameters dict must be a proper JSON Schema object, not a flat map,
+        # so Tool.to_api_schema() produces a valid Anthropic input_schema.
+        for name, entry in recorded.items():
+            params = entry["parameters"]
+            assert params.get("type") == "object", (
+                f"{name}: parameters must have 'type': 'object'; got {params.get('type')!r}"
+            )
+            assert "properties" in params, (
+                f"{name}: parameters must have a 'properties' key"
+            )
+
 
 class TestProviderModules:
     def test_openai_provider_chat_parses_text_and_tool_calls(self, monkeypatch):
@@ -3501,10 +3546,12 @@ class TestDanGuiComponentsExpanded:
 
 class TestDanGuiModern:
     def test_modern_gui_module_exports_shell(self):
-        import dan_gui
         import dan_gui_modern
+        from dan_gui_controller import DanControllerMixin
 
-        assert issubclass(dan_gui_modern.DanModernGUI, dan_gui.DanGUI)
+        # DanModernGUI no longer inherits from the legacy DanGUI shell.
+        # It inherits from ctk.CTk + DanControllerMixin directly.
+        assert issubclass(dan_gui_modern.DanModernGUI, DanControllerMixin)
         assert callable(dan_gui_modern.main)
 
 

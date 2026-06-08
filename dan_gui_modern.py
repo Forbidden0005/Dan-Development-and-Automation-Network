@@ -7,22 +7,24 @@ import json
 import os
 import threading
 import tkinter as tk
+import uuid
 from pathlib import Path
 
 from actions import get_all_actions
 from agent import AgentInterrupted, run_agent_loop
-from config import APP_NAME, APP_VERSION, USER_DATA_DIR
-from dan_gui import DanGUI
+from config import APP_NAME, APP_VERSION, DEFAULT_MODEL, DEFAULT_PROVIDER, USER_DATA_DIR
+from dan_gui_controller import DanControllerMixin
 from dan_gui_support import (
+    DEFAULT_PROMPT_TEMPLATE,
     build_actions_text,
     estimate_tokens,
     extract_assistant_text,
     format_relative_date,
     infer_provider_from_model,
+    sanitize_prompt_name,
     session_title_from_file,
     timestamp_label,
 )
-# Tool registration is inherited via DanGUI._init_dan() → register_all_tools().
 from dan_gui_theme import THEME_DARK, THEME_LIGHT, get_theme_tokens, normalize_theme, theme_from_config
 from gui_compat import ctk, ensure_gui_runtime
 from providers import get_provider
@@ -193,8 +195,14 @@ class ModernLiveBubble:
             pass
 
 
-class DanModernGUI(DanGUI):
-    """Supported desktop shell: Claude-inspired, Dan-branded, theme-aware."""
+class DanModernGUI(ctk.CTk, DanControllerMixin):
+    """Supported desktop shell: Claude-inspired, Dan-branded, theme-aware.
+
+    Inherits window behaviour from ``ctk.CTk`` and non-visual controller
+    behaviour (tool init, shortcut binding, session loading) from
+    ``DanControllerMixin``.  The legacy ``DanGUI`` class is no longer in the
+    inheritance chain — this shell is fully self-contained.
+    """
 
     SIDEBAR_W = 304
     RIGHT_RAIL_W = 264
@@ -202,14 +210,44 @@ class DanModernGUI(DanGUI):
     def __init__(self):
         from api_config import load_config
 
-        self._theme_name = theme_from_config(load_config())
+        # Load config once; reuse for both theme and provider initialisation.
+        cfg = load_config()
+        self._theme_name = theme_from_config(cfg)
         self.ui = get_theme_tokens(self._theme_name)
         self._workspace_pane = "Files"
         self._workspace_buttons = {}
+
+        # Initialise the ctk.CTk window base (the only __init__ in the chain).
         super().__init__()
         self.title(f"{APP_NAME} - v{APP_VERSION}")
         self.geometry("1180x660")
         self.minsize(1020, 600)
+
+        # Controller state — previously delegated to DanGUI.__init__.
+        self.messages: list = []
+        self.provider = None
+        self.is_processing = False
+        self._session_id = str(uuid.uuid4())[:8]
+        self._search_var = tk.StringVar()
+        self.provider_name: str = cfg.get("provider") or DEFAULT_PROVIDER
+        _pc = cfg.get(self.provider_name, {})
+        self.model_name: str = (
+            _pc.get("model") or cfg.get("model") or DEFAULT_MODEL
+        )
+
+        # Initialise tools + provider (DanControllerMixin._init_dan).
+        self._init_dan()
+        # Build the modern UI.
+        self._build_ui()
+        # Bind Ctrl+N, Ctrl+,, Ctrl+P, Escape (DanControllerMixin._bind_shortcuts).
+        self._bind_shortcuts()
+        # Restore the most recent auto-saved session, or show a welcome message.
+        if not self._load_history():
+            self.add_message(
+                "assistant",
+                f"Hey. I'm {APP_NAME}, your local-first development assistant.\n"
+                "Ask me to inspect code, plan a change, debug a workflow, or build something.",
+            )
 
     def _font(self, size: int, weight: str = "normal"):
         return ctk.CTkFont(family="Segoe UI", size=size, weight=weight)
@@ -1018,8 +1056,6 @@ class DanModernGUI(DanGUI):
     def new_chat(self):
         if self.is_processing:
             return
-        import uuid
-
         self.messages = []
         self._session_id = str(uuid.uuid4())[:8]
         self._clear_chat()
@@ -1293,6 +1329,182 @@ class DanModernGUI(DanGUI):
         self._update_tokens()
         self.input_box.focus()
 
+    # ------------------------------------------------------------------
+    # Dialog windows (previously inherited from DanGUI)
+    # ------------------------------------------------------------------
+
+    def show_prompts(self) -> None:
+        """Open the prompt library dialog using the current theme."""
+        pdir = USER_DATA_DIR / "prompts"
+        pdir.mkdir(parents=True, exist_ok=True)
+
+        window = self._popup("Prompts", 840, 600)
+        window.grid_columnconfigure(1, weight=1)
+        window.grid_rowconfigure(0, weight=1)
+
+        # ── Left pane: prompt list ────────────────────────────────────────
+        left = ctk.CTkFrame(window, fg_color=self.ui.sidebar, corner_radius=0, width=230)
+        left.grid(row=0, column=0, sticky="nsew")
+        left.grid_propagate(False)
+        left.grid_columnconfigure(0, weight=1)
+        left.grid_rowconfigure(1, weight=1)
+
+        self._button(
+            left,
+            "+  New prompt",
+            lambda: _load(None),
+            height=38,
+            fg_color=self.ui.accent,
+            hover_color=self.ui.accent_hover,
+            text_color=self.ui.accent_text,
+            radius=10,
+        ).grid(row=0, column=0, padx=12, pady=(14, 8), sticky="ew")
+
+        prompt_list = ctk.CTkScrollableFrame(
+            left,
+            fg_color="transparent",
+            scrollbar_button_color=self.ui.border_strong,
+        )
+        prompt_list.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        prompt_list.grid_columnconfigure(0, weight=1)
+
+        # ── Right pane: editor ────────────────────────────────────────────
+        right = ctk.CTkFrame(window, fg_color=self.ui.background, corner_radius=0)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.grid_columnconfigure(0, weight=1)
+        right.grid_rowconfigure(1, weight=1)
+
+        name_row = ctk.CTkFrame(right, fg_color="transparent")
+        name_row.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 8))
+        name_row.grid_columnconfigure(1, weight=1)
+        self._label(name_row, "Name", 10, "bold", color=self.ui.text_subtle, anchor="w").grid(
+            row=0, column=0, padx=(0, 10)
+        )
+        name_var = tk.StringVar()
+        ctk.CTkEntry(
+            name_row,
+            textvariable=name_var,
+            placeholder_text="Prompt name...",
+            fg_color=self.ui.input_bg,
+            border_color=self.ui.border,
+            border_width=1,
+            text_color=self.ui.text,
+            font=self._font(13),
+        ).grid(row=0, column=1, sticky="ew")
+
+        editor = ctk.CTkTextbox(
+            right,
+            fg_color=self.ui.input_bg,
+            border_width=1,
+            border_color=self.ui.border,
+            corner_radius=12,
+            text_color=self.ui.text,
+            font=ctk.CTkFont(family="Consolas", size=13),
+            wrap="word",
+        )
+        editor.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 8))
+
+        btn_row = ctk.CTkFrame(right, fg_color="transparent")
+        btn_row.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 18))
+
+        _cur: list = [None]
+
+        def _refresh() -> None:
+            for w in prompt_list.winfo_children():
+                w.destroy()
+            files = sorted(pdir.glob("*.txt"))
+            if not files:
+                self._label(
+                    prompt_list, "No prompts yet.", 12, color=self.ui.text_subtle
+                ).grid(padx=10, pady=10, sticky="w")
+                return
+            for fp in files:
+                active = fp == _cur[0]
+                self._button(
+                    prompt_list,
+                    fp.stem,
+                    lambda f=fp: _load(f),
+                    height=34,
+                    fg_color=self.ui.surface if active else "transparent",
+                    hover_color=self.ui.surface_hover,
+                    text_color=self.ui.text if active else self.ui.text_muted,
+                    radius=8,
+                ).grid(sticky="ew", pady=2, padx=2)
+
+        def _load(fp) -> None:
+            _cur[0] = fp
+            editor.delete("1.0", "end")
+            if fp is None:
+                name_var.set("")
+                editor.insert("1.0", DEFAULT_PROMPT_TEMPLATE)
+            else:
+                name_var.set(fp.stem)
+                editor.insert("1.0", fp.read_text(encoding="utf-8"))
+            _refresh()
+
+        def _save() -> None:
+            safe = sanitize_prompt_name(name_var.get().strip())
+            if not safe:
+                return
+            fp = pdir / f"{safe}.txt"
+            fp.write_text(editor.get("1.0", "end-1c"), encoding="utf-8")
+            _cur[0] = fp
+            _refresh()
+
+        def _delete() -> None:
+            if _cur[0] and _cur[0].exists():
+                _cur[0].unlink()
+            _load(None)
+
+        def _use() -> None:
+            text = editor.get("1.0", "end-1c").strip()
+            if text:
+                self._inject_prompt(text)
+            window.destroy()
+
+        self._button(btn_row, "Save", _save, width=80, height=36, border=True).grid(
+            row=0, column=0, padx=(0, 8)
+        )
+        self._button(
+            btn_row,
+            "Delete",
+            _delete,
+            width=80,
+            height=36,
+            fg_color=self.ui.surface,
+            hover_color=self.ui.surface_hover,
+            text_color=self.ui.text_muted,
+        ).grid(row=0, column=1, padx=(0, 8))
+        self._button(
+            btn_row,
+            "Use prompt  ▶",
+            _use,
+            width=150,
+            height=36,
+            fg_color=self.ui.accent,
+            hover_color=self.ui.accent_hover,
+            text_color=self.ui.accent_text,
+        ).grid(row=0, column=2)
+
+        _refresh()
+        _load(None)
+
+    def show_terminal(self) -> None:
+        """Placeholder for the terminal pane."""
+        self.add_message(
+            "assistant",
+            "Terminal view coming soon!\n"
+            "For now, ask me to run commands and I'll use the shell tool.",
+        )
+
+    def show_error(self, message: str) -> None:
+        """Display *message* as an inline error bubble."""
+        self._inline_error(message)
+
+    # ------------------------------------------------------------------
+    # Static helpers
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _session_title(session: dict) -> str:
         return session_title_from_file(session, USER_DATA_DIR / "sessions")
@@ -1350,45 +1562,36 @@ def _install_exception_hooks() -> None:
         details = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         _show_fatal_error(
             f"{APP_NAME} — Unexpected Error",
-            f"{exc_type.__name__}: {exc_value}\n\nDetails logged to stderr.",
+            f"An unexpected error occurred:\n\n{details}",
         )
 
     def _handle_thread_exception(args):
-        if args.exc_type is None or issubclass(args.exc_type, SystemExit):
+        if args.exc_type is SystemExit:
             return
         details = "".join(
-            traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)
+            traceback.format_exception(args.exc_type, args.exc_value, args.exc_tb)
         )
         _show_fatal_error(
             f"{APP_NAME} — Background Thread Error",
-            f"{args.exc_type.__name__}: {args.exc_value}\n\nDetails logged to stderr.",
+            f"A background thread raised an unhandled exception:\n\n{details}",
         )
 
     sys.excepthook = _handle_main_thread_exception
     threading.excepthook = _handle_thread_exception
 
 
-def main():
-    from workers import get_pool
-
+def main() -> None:
     _install_exception_hooks()
     ensure_gui_runtime()
-
     try:
         app = DanModernGUI()
         app.mainloop()
-    except Exception as exc:  # noqa: BLE001
-        import traceback
-
-        details = traceback.format_exc()
-        _show_fatal_error(
-            f"{APP_NAME} — Startup Error",
-            f"{type(exc).__name__}: {exc}\n\nDetails logged to stderr.",
-        )
+    except Exception as exc:
+        _show_fatal_error(f"{APP_NAME} — Fatal Error", str(exc))
         raise
     finally:
-        # Always attempt a clean shutdown of background workers.
         try:
+            from workers import get_pool
             get_pool().shutdown(wait=False)
         except Exception:  # noqa: BLE001
             pass

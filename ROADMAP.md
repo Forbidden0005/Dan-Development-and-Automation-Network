@@ -107,6 +107,13 @@ These items are complete enough to count as done and should not remain mixed int
 
 - Created `docs/ARCHITECTURE.md` with module group map, file-by-file ownership table, simplified dependency graph, known coupling issues, and module ownership summary
 
+### Completed In This GUI Decoupling Pass (2026-06-08)
+
+- Created `dan_gui_controller.py` with `DanControllerMixin`: extracts all non-visual controller logic shared across GUI shells (`_init_dan`, `_bind_shortcuts`, `_cancel_if_processing`, `_handle_enter`, `load_session`, `_inline_error`, `_clear_chat`, `_scroll_to_bottom`)
+- Changed `DanModernGUI` inheritance from `DanModernGUI(DanGUI)` to `DanModernGUI(ctk.CTk, DanControllerMixin)` — eliminates the dependency on the legacy shell at the class level
+- Added `show_prompts`, `show_terminal`, and `show_error` directly to `DanModernGUI` (previously inherited from `DanGUI`) — modern shell is now fully self-contained
+- `dan_gui.py` no longer required by the modern GUI path; can be retired once direct callers are audited
+
 ### Completed In This Security Hardening Pass (2026-06-08 steward pass 7)
 
 - Fixed `register_core_tools()` in `tools.py`: all 12 core tools now carry explicit `safety_level` annotations (Level 1: Read/Glob/Grep/ListDir/Diff; Level 2: Write/Edit/Append/Copy/Move/HttpRequest; Level 3: Bash)
@@ -216,9 +223,9 @@ Exit criteria met:
 - Tool safety levels (1–3 + optional) documented ✓
 
 Deferred:
-- Secret scanning (no detection of accidentally committed keys)
-- Audit log for tool invocations
-- Tool invocation confirmation gate for Level 3 tools in autonomous workflows
+- ~~Secret scanning~~ ✓ completed (2026-06-08 steward pass 5)
+- ~~Audit log for tool invocations~~ ✓ completed (2026-06-08 steward pass 6)
+- ~~Tool invocation confirmation gate for Level 3 tools in autonomous workflows~~ ✓ completed (2026-06-08 steward pass 6)
 
 ## Phase 6: Architecture And Maintainability Refinement
 
@@ -234,7 +241,7 @@ Exit criteria met:
 Deferred:
 - `tools.py` / `tools_secure.py` merge (non-trivial refactor)
 - Package consolidation of top-level flat module layout
-- Extract remaining controller behavior from `dan_gui.py`
+- ~~Extract remaining controller behavior from `dan_gui.py`~~ ✓ completed (2026-06-08)
 
 ## Backlog: Known Gaps And Future Work
 
@@ -243,8 +250,8 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 ### Code Quality
 
 - `tools.py` and `tools_secure.py` overlap — merge into a single secure implementation (non-trivial; keep both until a safe migration path is designed)
-- `tools_secure.py` `register_secure_core_tools()` uses a flat parameters dict (missing `"type": "object"` + `"properties"` wrapper) — schema would be malformed if sent to the API; also missing `safety_level` annotations; this function is test-only and not in the production path, but should be corrected before the merge
-- `dan_gui.py` still mixes legacy visual shell code with controller behavior used by `DanModernGUI` — extract remaining controller logic before retiring the legacy shell
+- ~~`tools_secure.py` `register_secure_core_tools()` uses a flat parameters dict (missing `"type": "object"` + `"properties"` wrapper) — schema would be malformed if sent to the API; also missing `safety_level` annotations~~ ✓ fixed (2026-06-08 steward pass 8): parameters now use proper JSON Schema format; safety_level annotations added (Read/Glob/Grep/ListDir=1, Write/Edit=2, Bash=3); parallel test `test_register_secure_core_tools_assigns_correct_safety_levels` added to `tests/test_dan.py`
+- `dan_gui.py` legacy shell is now decoupled from `DanModernGUI` — `DanControllerMixin` in `dan_gui_controller.py` holds all shared non-visual controller logic; `DanModernGUI` inherits from `ctk.CTk + DanControllerMixin` directly; `dan_gui.py` can be retired when its direct callers are confirmed absent ✓ (2026-06-08)
 - Top-level flat module layout is serviceable but will become harder to navigate as optional tool families grow — long-term migration toward the `actions/`/`knowledge/`/`web/`/`workers/` package model
 
 ### Security Hardening
@@ -266,6 +273,7 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 ### Known Benign Issues
 
 - pytest collection in the Linux sandbox fails due to a `.pytest_cache` mount permission issue; tests pass on the real Windows machine — not a code defect
+- `.git/index.lock` persists across sandbox sessions (FUSE mount permission prevents `rm` from the sandbox); the git index also has pre-existing staged deletions of untracked files (`tools_secure.py`, `tool_registry.py`, `tools.py`, several test files) that must NOT be committed — requires manual cleanup on Windows: `rm .git/index.lock && git restore --staged .` followed by `git add` of only intended changes
 
 ## Out Of Scope Until Reopened
 
