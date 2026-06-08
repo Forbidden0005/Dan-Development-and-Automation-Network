@@ -1119,6 +1119,35 @@ class TestCoreToolsMore:
             set(registered)
         )
 
+    def test_register_core_tools_assigns_correct_safety_levels(self, monkeypatch):
+        """Verify that core tools carry the expected safety levels.
+
+        The confirmation gate infrastructure only fires for Level 3 tools, so it
+        is critical that Bash is registered at level 3 and write-side tools are at
+        level 2.  Read-only tools must stay at level 1.
+        """
+        import tools
+
+        recorded: dict[str, int] = {}
+        monkeypatch.setattr(
+            tools.registry,
+            "register",
+            lambda **kwargs: recorded.__setitem__(kwargs["name"], kwargs.get("safety_level", 1)),
+        )
+
+        tools.register_core_tools()
+
+        # Level 3 — elevated execution (shell, code runner)
+        assert recorded["Bash"] == 3, "Bash must be Level 3 to trigger confirmation gate"
+
+        # Level 2 — standard writes, reversible
+        for name in ("Write", "Edit", "Append", "Copy", "Move", "HttpRequest"):
+            assert recorded[name] == 2, f"{name} must be Level 2"
+
+        # Level 1 — read-only, no side effects
+        for name in ("Read", "Glob", "Grep", "ListDir", "Diff"):
+            assert recorded[name] == 1, f"{name} must be Level 1"
+
 
 class TestSecureTools:
     def test_secure_glob_and_grep_behaviors(self, monkeypatch, tmp_path):

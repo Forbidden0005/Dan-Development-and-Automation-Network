@@ -521,6 +521,7 @@ def register_core_tools() -> None:
             "required": ["path"],
         },
         handler=read_file,
+        safety_level=1,
     )
 
     registry.register(
@@ -535,6 +536,7 @@ def register_core_tools() -> None:
             "required": ["path", "content"],
         },
         handler=write_file,
+        safety_level=2,
     )
 
     registry.register(
@@ -553,6 +555,7 @@ def register_core_tools() -> None:
             "required": ["path", "old_text", "new_text"],
         },
         handler=edit_file,
+        safety_level=2,
     )
 
     registry.register(
@@ -567,6 +570,7 @@ def register_core_tools() -> None:
             "required": ["command"],
         },
         handler=run_bash,
+        safety_level=3,
     )
 
     registry.register(
@@ -581,6 +585,7 @@ def register_core_tools() -> None:
             "required": ["pattern"],
         },
         handler=glob_files,
+        safety_level=1,
     )
 
     registry.register(
@@ -600,6 +605,7 @@ def register_core_tools() -> None:
             "required": ["pattern"],
         },
         handler=grep_search,
+        safety_level=1,
     )
 
     registry.register(
@@ -612,6 +618,7 @@ def register_core_tools() -> None:
             },
         },
         handler=list_directory,
+        safety_level=1,
     )
 
     # ── New tools ─────────────────────────────────────────────────────────────
@@ -628,6 +635,7 @@ def register_core_tools() -> None:
             "required": ["path", "content"],
         },
         handler=append_file,
+        safety_level=2,
     )
 
     registry.register(
@@ -642,6 +650,7 @@ def register_core_tools() -> None:
             "required": ["path_a", "path_b"],
         },
         handler=diff_files,
+        safety_level=1,
     )
 
     registry.register(
@@ -656,6 +665,7 @@ def register_core_tools() -> None:
             "required": ["src", "dest"],
         },
         handler=move_path,
+        safety_level=2,
     )
 
     registry.register(
@@ -670,6 +680,7 @@ def register_core_tools() -> None:
             "required": ["src", "dest"],
         },
         handler=copy_file,
+        safety_level=2,
     )
 
     registry.register(
@@ -704,4 +715,5 @@ def register_core_tools() -> None:
             "required": ["url"],
         },
         handler=http_request,
+        safety_level=2,
     )

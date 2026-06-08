@@ -26,7 +26,7 @@ The long-term target is a professional-grade Windows application with:
 
 ## Current State Snapshot
 
-Verified on 2026-06-08 (steward pass 5):
+Verified on 2026-06-08 (steward pass 7):
 
 - `python -m pytest -q` passes (on real Windows; Linux sandbox has a `.pytest_cache` mount permission issue)
 - `python -m ruff check .` passes
@@ -106,6 +106,11 @@ These items are complete enough to count as done and should not remain mixed int
 ### Completed In Phase 6 Architecture Documentation Pass
 
 - Created `docs/ARCHITECTURE.md` with module group map, file-by-file ownership table, simplified dependency graph, known coupling issues, and module ownership summary
+
+### Completed In This Security Hardening Pass (2026-06-08 steward pass 7)
+
+- Fixed `register_core_tools()` in `tools.py`: all 12 core tools now carry explicit `safety_level` annotations (Level 1: Read/Glob/Grep/ListDir/Diff; Level 2: Write/Edit/Append/Copy/Move/HttpRequest; Level 3: Bash)
+- Added `test_register_core_tools_assigns_correct_safety_levels` to `tests/test_dan.py` — verifies gate will fire for Bash and that write-side tools carry level 2
 
 ### Completed In This Security Hardening Pass (2026-06-08 steward passes 5–6)
 
@@ -238,6 +243,7 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 ### Code Quality
 
 - `tools.py` and `tools_secure.py` overlap — merge into a single secure implementation (non-trivial; keep both until a safe migration path is designed)
+- `tools_secure.py` `register_secure_core_tools()` uses a flat parameters dict (missing `"type": "object"` + `"properties"` wrapper) — schema would be malformed if sent to the API; also missing `safety_level` annotations; this function is test-only and not in the production path, but should be corrected before the merge
 - `dan_gui.py` still mixes legacy visual shell code with controller behavior used by `DanModernGUI` — extract remaining controller logic before retiring the legacy shell
 - Top-level flat module layout is serviceable but will become harder to navigate as optional tool families grow — long-term migration toward the `actions/`/`knowledge/`/`web/`/`workers/` package model
 
