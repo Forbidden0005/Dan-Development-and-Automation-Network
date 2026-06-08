@@ -26,7 +26,7 @@ The long-term target is a professional-grade Windows application with:
 
 ## Current State Snapshot
 
-Verified on 2026-06-08 (steward pass 2):
+Verified on 2026-06-08 (steward pass 5):
 
 - `python -m pytest -q` passes (on real Windows; Linux sandbox has a `.pytest_cache` mount permission issue)
 - `python -m ruff check .` passes
@@ -106,6 +106,12 @@ These items are complete enough to count as done and should not remain mixed int
 ### Completed In Phase 6 Architecture Documentation Pass
 
 - Created `docs/ARCHITECTURE.md` with module group map, file-by-file ownership table, simplified dependency graph, known coupling issues, and module ownership summary
+
+### Completed In This Security Hardening Pass (2026-06-08 steward pass 5)
+
+- Added `scripts/scan_secrets.py`: git-aware secret scanner for Anthropic, OpenAI, Venice, AWS, and generic credential assignment patterns; exit code 0/1/2; inline `# noqa: scan-secrets` suppression; runs without external dependencies
+- Added `test_scan_secrets_script_exists_and_is_importable` and `test_scan_secrets_finds_no_real_secrets_in_tracked_files` to `tests/test_repo_hygiene.py`
+- Updated `docs/SECURITY_BOUNDARIES.md`: removed "no secret scanning" from Known Gaps; documented the scanner and its test in Secret Handling section
 
 ### Completed In This Packaging Pass
 
@@ -228,7 +234,6 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 
 ### Security Hardening
 
-- No secret scanning — Dan does not detect or warn about accidentally committed API keys
 - No audit log — tool invocations are not persisted for review
 - No explicit confirmation gate before Level 3 (shell execution) tools in autonomous workflows
 - Command allowlist permits `powershell` and `cmd`, which can bypass other restrictions if invoked deliberately
@@ -241,8 +246,8 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 
 ### Documentation
 
-- `docs/AUTHENTICATION_SYSTEM.md` should be audited for accuracy against current `auth_system.py` implementation
-- `CONTRIBUTING.md` exists but may need alignment with the current project posture
+- `docs/AUTHENTICATION_SYSTEM.md` audited and corrected against `auth_system.py` ✓ (2026-06-08 steward pass 4) — fixed: require_auth default, bootstrap key delivery, salt behavior, data file locations, role permission details, removed inapplicable network-service advice
+- `CONTRIBUTING.md` aligned with current project posture ✓ (2026-06-08 steward pass 3)
 
 ### Known Benign Issues
 

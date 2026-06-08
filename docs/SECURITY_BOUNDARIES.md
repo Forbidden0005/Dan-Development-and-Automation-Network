@@ -78,7 +78,9 @@ Dan does not store API keys. Provider API keys are:
 
 **What is stored in `%APPDATA%\Dan\`:** session history (chat messages), knowledge embeddings, and auth-system metadata. No API keys or raw credentials are stored there.
 
-**`.env` hygiene:** The `.env` file is gitignored. Users should never commit it. Dan does not scan for accidentally committed secrets.
+**`.env` hygiene:** The `.env` file is gitignored. Users should never commit it.
+
+**Secret scanning:** `scripts/scan_secrets.py` scans all Git-tracked files for common secret patterns (Anthropic, OpenAI, and Venice API keys, AWS Access Key IDs, and generic high-entropy credential assignments). Run it manually or integrate it into CI with `python scripts/scan_secrets.py`. Exit code 0 means clean; exit code 1 means findings. Individual lines can be suppressed with a trailing `# noqa: scan-secrets` comment for confirmed false positives. The test `test_scan_secrets_finds_no_real_secrets_in_tracked_files` in `tests/test_repo_hygiene.py` runs this check automatically as part of the test suite.
 
 ---
 
@@ -150,7 +152,6 @@ User input fed into tools is:
 
 ## Known Gaps
 
-- No secret scanning — Dan does not detect or warn when a user pastes an API key into a chat message or file write.
 - The command allowlist permits `powershell` and `cmd`, which can bypass other restrictions if invoked deliberately.
 - No audit log — there is no persistent record of which tools were invoked, with what arguments, and what they produced. This is a future hardening item.
 - No tool invocation confirmation gate — Dan does not prompt the user before executing Level 3 tools. This is appropriate for the current local-REPL usage model but should be revisited for any multi-agent or autonomous workflow.
