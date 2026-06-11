@@ -234,11 +234,11 @@ Deferred:
 
 ## Phase 7 — Release Distribution (in progress)
 
-Goal: a Windows user can install Dan from a single signed `.exe` link, and the project's release pipeline can produce that link without manual steps.
+Goal: pushing a version tag produces a GitHub release with downloadable Windows artifacts (the portable GUI and CLI builds that `scripts/build_windows.py` produces today) without manual steps. A single signed installer `.exe` remains the long-term target, but it is gated on the deferred installer and code-signing work listed below and is NOT an exit criterion for this phase.
 
 Deferred-pending-approval items remain explicitly listed; this phase only executes the additive, low-risk pieces.
 
-- [ ] 7.1 Automate installer `.exe` asset upload in `.github/workflows/release.yml`
+- [ ] 7.1 Add `.github/workflows/release.yml` that builds and uploads the portable Windows artifacts to the GitHub release on version tags (extends to the installer `.exe` only after the deferred installer work is approved and merged)
 - [ ] 7.2 Add size-based rotation + retention policy to `ToolAuditLog` (`security_utils.py`)
 - [ ] 7.3 Add session + auto-save retention pruning in `session_mgr.py`
 - [ ] 7.4 Persist crash/interrupt checkpoint across process restart and auto-offer resume on next launch
