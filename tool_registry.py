@@ -27,7 +27,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from security_utils import ToolAuditLog
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +49,10 @@ _CACHED_SCHEMAS: list[dict] | None = None
 _confirmation_gate: Callable[[str, dict, int], bool] | None = None
 
 # Lazy-initialised audit log singleton.
-_audit_log: "ToolAuditLog | None" = None  # type: ignore[name-defined]
+_audit_log: "ToolAuditLog | None" = None
 
 
-def _get_audit_log() -> "ToolAuditLog":  # type: ignore[name-defined]
+def _get_audit_log() -> "ToolAuditLog":
     """Return the process-wide ToolAuditLog, creating it on first call."""
     global _audit_log
     if _audit_log is None:
