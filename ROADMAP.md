@@ -36,6 +36,7 @@ Verified on 2026-06-08 (steward pass 5):
 - the PyInstaller portable GUI packaging path has been executed locally and produces a real Windows build output
 - GitHub Actions has Windows packaging jobs for GUI and CLI with smoke tests
 - Phases 2–6 completed in this pass: repository cleanup, Python/Windows support matrix, startup hardening, release documentation, security boundary documentation, architecture documentation
+- 2026-06-11: repaired CI — unpinned ruff (0.15.x) began flagging F821 on quoted `ToolAuditLog` annotations in `tool_registry.py` (fixed via `TYPE_CHECKING` import), and the windows-packaging job ran pytest without installing it (now installs `requirements-dev.txt`); full suite (232 tests) and packaging tests verified locally on ruff 0.15.16
 
 ## Completed
 
