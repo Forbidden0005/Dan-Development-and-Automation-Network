@@ -36,6 +36,7 @@ Verified on 2026-06-08 (steward pass 5):
 - the PyInstaller portable GUI packaging path has been executed locally and produces a real Windows build output
 - GitHub Actions has Windows packaging jobs for GUI and CLI with smoke tests
 - Phases 2–6 completed in this pass: repository cleanup, Python/Windows support matrix, startup hardening, release documentation, security boundary documentation, architecture documentation
+- 2026-06-11: repaired CI — unpinned ruff (0.15.x) began flagging F821 on quoted `ToolAuditLog` annotations in `tool_registry.py` (fixed via `TYPE_CHECKING` import), and the windows-packaging job ran pytest without installing it (now installs `requirements-dev.txt`); full suite (232 tests) and packaging tests verified locally on ruff 0.15.16
 
 ## Completed
 
@@ -230,6 +231,66 @@ Deferred:
 - `tools.py` / `tools_secure.py` merge (non-trivial refactor)
 - Package consolidation of top-level flat module layout
 - Extract remaining controller behavior from `dan_gui.py`
+
+## Phase 7 — Release Distribution (in progress)
+
+Goal: pushing a version tag produces a GitHub release with downloadable Windows artifacts (the portable GUI and CLI builds that `scripts/build_windows.py` produces today) without manual steps. A single signed installer `.exe` remains the long-term target, but it is gated on the deferred installer and code-signing work listed below and is NOT an exit criterion for this phase.
+
+Deferred-pending-approval items remain explicitly listed; this phase only executes the additive, low-risk pieces.
+
+- [ ] 7.1 Add `.github/workflows/release.yml` that builds and uploads the portable Windows artifacts to the GitHub release on version tags (extends to the installer `.exe` only after the deferred installer work is approved and merged)
+- [ ] 7.2 Add size-based rotation + retention policy to `ToolAuditLog` (`security_utils.py`)
+- [ ] 7.3 Add session + auto-save retention pruning in `session_mgr.py`
+- [ ] 7.4 Persist crash/interrupt checkpoint across process restart and auto-offer resume on next launch
+- [ ] 7.5 Enforce `MAX_WORKER_DEPTH` in `workers/__init__.py` before sub-agent spawn
+
+Deferred — require user approval per `PROJECT_INTEGRITY.md`:
+- Removal of `tools_secure.py` (566 LOC duplicate of `tools.py`)
+- Retirement of `dan_gui.py` legacy shell
+- Windows icon asset creation
+- Code-signing infrastructure (Azure KeyVault / self-hosted signing agent)
+
+## Phase 8 — Code Hygiene + Security Test Depth
+
+Goal: the security primitives have dedicated unit tests; lint/format is enforced locally; error surfaces are consistent.
+
+- [ ] 8.1 Add `.pre-commit-config.yaml` (ruff, black, end-of-file-fixer, trailing-whitespace)
+- [ ] 8.2 Introduce `errors.py` with a `DanError` hierarchy and adopt it in `tool_registry.py` and `security_utils.py` gate paths
+- [ ] 8.3 Unit tests for `SecurePathValidator` (traversal, symlink, root-bounds, Windows drive cases)
+- [ ] 8.4 Unit tests for `sanitize_user_input` edge cases (null bytes, control chars, max-length rejection)
+- [ ] 8.5 Unit tests for `validate_fetch_url` SSRF protections (private CIDRs, link-local, IPv6, redirect chains)
+
+## Phase 9 — CLI Polish + Reproducibility
+
+Goal: the CLI is friendlier to first-time users; installs are reproducible byte-for-byte.
+
+- [ ] 9.1 PowerShell tab-completion module (`scripts/completions/dan.psm1`)
+- [ ] 9.2 Cleaner CLI error surfacing in `Dan.py` `main()` — friendly summary by default, full traceback only under `--verbose`
+- [ ] 9.3 Generate and commit `uv.lock`; document `uv pip install --frozen` path in `INSTALL.md`
+
+## Phase 10 — Observability + Operator Tools
+
+Goal: an operator can answer "what did Dan run last week and what did it cost?" without grepping JSONL by hand.
+
+- [ ] 10.1 `scripts/audit_query.py` + `/audit` slash command — query the audit log by tool name, time window, outcome
+- [ ] 10.2 Persistent cost log (append-only JSONL) written by `cost_tracker.py`, with a `/cost` summary view
+
+## Phase 11 — Documentation Site
+
+Goal: `docs/` is served as a navigable site rather than a folder of markdown.
+
+- [ ] 11.1 mkdocs scaffolding (`mkdocs.yml`, nav for existing docs, GitHub Pages workflow)
+
+## Phase 12 — Backlog (not scheduled)
+
+Captured for visibility; promoted into a phase only when prerequisites are met:
+- First-run wizard (provider chooser, key entry, test-call)
+- Accessibility audit of `dan_gui_modern.py`
+- Mypy adoption (start with `security_utils.py`, `tool_registry.py`, `providers.py`)
+- Coverage ratchet (baseline + `fail_under` in CI)
+- Plugin / extension authoring guide
+- Sample-projects quickstart in `docs/`
+- Auto-update mechanism for installed Dan
 
 ## Backlog: Known Gaps And Future Work
 
