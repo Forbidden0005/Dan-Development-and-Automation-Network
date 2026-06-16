@@ -125,8 +125,27 @@ Before distributing a build:
 
 ---
 
+## Automated Release Workflow
+
+Pushing a version tag publishes the portable Windows artifacts automatically:
+
+```powershell
+git tag -a "vX.Y.Z" -m "Dan vX.Y.Z"
+git push origin main --tags
+```
+
+This triggers `.github/workflows/release.yml`, which:
+
+1. Builds the portable GUI (`Dan`) and CLI (`DanCLI`) bundles via `scripts/build_windows.py`
+2. Verifies each bundle's shape and runs the packaged CLI smoke test
+3. Zips them as `Dan-<version>-windows-gui.zip` and `Dan-<version>-windows-cli.zip`
+4. Creates a GitHub Release (auto-generated notes) and uploads both archives as downloadable assets
+
+The `prerelease` flag is set automatically when the tag contains a hyphen (e.g. `v2.6.0-rc1`).
+
+---
+
 ## What Is Not Yet Done
 
-- **No Windows installer** — the current release path is portable `onedir` only. An MSIX or Inno Setup installer is a future Phase 4 task.
-- **No automated release pipeline** — the GitHub Actions workflow builds and verifies the packaging path but does not publish artifacts. Artifact upload and release creation must be done manually until that gap is closed.
+- **No Windows installer on this branch** — the release path here is portable `onedir` only. An Inno Setup installer exists on the `codex/claude-inspired-ui` branch but has not been merged to this line; once merged, `release.yml` extends to upload the installer `.exe`.
 - **No signed executables** — the portable builds are unsigned. Windows SmartScreen may warn on first launch.

@@ -37,6 +37,8 @@ Verified on 2026-06-08 (steward pass 5):
 - GitHub Actions has Windows packaging jobs for GUI and CLI with smoke tests
 - Phases 2–6 completed in this pass: repository cleanup, Python/Windows support matrix, startup hardening, release documentation, security boundary documentation, architecture documentation
 - 2026-06-11: repaired CI — unpinned ruff (0.15.x) began flagging F821 on quoted `ToolAuditLog` annotations in `tool_registry.py` (fixed via `TYPE_CHECKING` import), and the windows-packaging job ran pytest without installing it (now installs `requirements-dev.txt`); full suite (232 tests) and packaging tests verified locally on ruff 0.15.16
+- 2026-06-16 ship-readiness pass: pre-release checklist re-verified green on this branch — `python -m pytest -q` passes (now **242 tests**, after adding the release-workflow guard test), `python -m ruff check .` clean, `python Dan.py --doctor --target cli` reports 0 blockers / 0 advisories, `python scripts/repo_health.py` passes (compileall over 58 files, tests, lint). `config.py` and `pyproject.toml` agree on version `2.5.1`. Only build-only gap: `pyinstaller` not installed in the dev shell (expected; needed only to produce binaries locally)
+- 2026-06-16: added tag-triggered release publishing (Phase 7.1) — `.github/workflows/release.yml` builds, verifies, smoke-tests, and uploads the portable GUI + CLI bundles as GitHub Release assets on `v*.*.*` tags. NOTE: the installer (`installer/Dan.iss`), icon asset (`assets/dan_icon.ico`), and code-signing support exist on the `codex/claude-inspired-ui` branch but have NOT been merged to this line; on this branch the release path is portable-artifacts-only, which is exactly Phase 7.1's scope
 
 ## Completed
 
@@ -238,7 +240,7 @@ Goal: pushing a version tag produces a GitHub release with downloadable Windows 
 
 Deferred-pending-approval items remain explicitly listed; this phase only executes the additive, low-risk pieces.
 
-- [ ] 7.1 Add `.github/workflows/release.yml` that builds and uploads the portable Windows artifacts to the GitHub release on version tags (extends to the installer `.exe` only after the deferred installer work is approved and merged)
+- [x] 7.1 Add `.github/workflows/release.yml` that builds and uploads the portable Windows artifacts to the GitHub release on version tags (extends to the installer `.exe` only after the deferred installer work is approved and merged) — **done 2026-06-16**: tag-triggered (`v*.*.*`) workflow builds GUI + CLI portable bundles, verifies + smoke-tests them, zips them as `Dan-<version>-windows-gui.zip` / `Dan-<version>-windows-cli.zip`, and publishes them as GitHub Release assets via `softprops/action-gh-release@v2`; prerelease flag auto-set when the tag contains `-`. Guarded by `tests/test_release_workflow.py`.
 - [ ] 7.2 Add size-based rotation + retention policy to `ToolAuditLog` (`security_utils.py`)
 - [ ] 7.3 Add session + auto-save retention pruning in `session_mgr.py`
 - [ ] 7.4 Persist crash/interrupt checkpoint across process restart and auto-offer resume on next launch
@@ -310,7 +312,7 @@ These items were identified during the 2026-06-06 through 2026-06-08 steward pas
 ### Release Infrastructure
 
 - Windows installer (MSIX / Inno Setup) — not yet started
-- Automated release artifact upload in GitHub Actions — not yet started
+- ~~Automated release artifact upload in GitHub Actions — not yet started~~ ✓ done 2026-06-16 (Phase 7.1): `.github/workflows/release.yml` publishes the portable GUI + CLI bundles as release assets on `v*.*.*` tags; installer-asset upload remains gated on the deferred installer work
 - Signed Windows executables — not yet started
 
 ### Documentation
