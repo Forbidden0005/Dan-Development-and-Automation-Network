@@ -50,4 +50,5 @@ Thumbs.db
 *.tmp
 *.temp
 *.bak
+.codex-*.png
 tmp_tools_secure_check/

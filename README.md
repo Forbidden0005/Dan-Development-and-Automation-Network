@@ -52,7 +52,7 @@ DAN_PROVIDER=ollama
 DAN_MODEL=qwen2.5-coder:7b
 ```
 
-See [.env.example](/C:/Users/tyler/Desktop/Dan/.env.example).
+See [.env.example](.env.example).
 
 ## Run
 
@@ -131,12 +131,12 @@ The release path supports:
 
 ## Repository Map
 
-- [ONBOARDING.md](/C:/Users/tyler/Desktop/Dan/ONBOARDING.md): shortest safe way into the repo
-- [PROJECT_INTEGRITY.md](/C:/Users/tyler/Desktop/Dan/PROJECT_INTEGRITY.md): mandatory execution gate
-- [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md): canonical direction and completed work
-- [INSTALL.md](/C:/Users/tyler/Desktop/Dan/INSTALL.md): local install and packaging setup
-- [RELEASE.md](/C:/Users/tyler/Desktop/Dan/RELEASE.md): release process and ship gate
-- [CODEX.md](/C:/Users/tyler/Desktop/Dan/CODEX.md): Codex operating rules for this repo
+- [ONBOARDING.md](ONBOARDING.md): shortest safe way into the repo
+- [PROJECT_INTEGRITY.md](PROJECT_INTEGRITY.md): mandatory execution gate
+- [ROADMAP.md](ROADMAP.md): canonical direction and completed work
+- [INSTALL.md](INSTALL.md): local install and packaging setup
+- [RELEASE.md](RELEASE.md): release process and ship gate
+- [CODEX.md](CODEX.md): Codex operating rules for this repo
 
 ## Remaining Gaps
 
@@ -147,4 +147,4 @@ The release path supports:
 
 ## Rule
 
-Before any non-trivial task, read [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md) and [PROJECT_INTEGRITY.md](/C:/Users/tyler/Desktop/Dan/PROJECT_INTEGRITY.md). After each completed task, update [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md).
+Before any non-trivial task, read [ROADMAP.md](ROADMAP.md) and [PROJECT_INTEGRITY.md](PROJECT_INTEGRITY.md). After each completed task, update [ROADMAP.md](ROADMAP.md).

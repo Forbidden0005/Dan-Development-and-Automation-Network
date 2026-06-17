@@ -184,6 +184,10 @@ These items are complete enough to count as done and should not remain mixed int
 - Verified with `python -m pytest -q tests\\test_build_windows.py tests\\test_release_artifacts.py tests\\test_release_readiness.py`, `python -m ruff check scripts\\build_windows.py scripts\\release_artifacts.py scripts\\release_readiness.py tests\\test_build_windows.py tests\\test_release_artifacts.py tests\\test_release_readiness.py`, `python scripts\\release_artifacts.py`, and `python scripts\\release_readiness.py`
 - Current verified local release status is stronger again: GUI bundle present, CLI bundle present, installer present, release integrity artifacts present, signing tool present, and only signing certificate material remains blocking
 
+### Completed In This Git Hygiene Pass
+
+- Added `.codex-*.png` to `.gitignore` so Codex GUI capture images do not keep polluting the repo state or get staged accidentally
+
 ### Completed In Phase 2 Cleanup Pass
 
 - Removed `USER_CREATION_GUIDE.md` (demo chat artifact, not real documentation)
