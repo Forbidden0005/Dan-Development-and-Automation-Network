@@ -1,0 +1,81 @@
+name: Release
+
+# Phase 7.1: pushing a version tag (e.g. v2.5.1) builds the portable Windows
+# GUI + CLI bundles that scripts/build_windows.py produces today and publishes
+# them as downloadable GitHub Release assets. A single signed installer .exe is
+# the long-term target but is gated on the deferred installer and code-signing
+# work tracked in ROADMAP.md; this workflow intentionally ships portable
+# artifacts only.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-packaging.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run packaging unit tests
+        run: pytest -q tests/test_build_windows.py tests/test_verify_windows_build.py tests/test_smoke_windows_cli.py
+
+      - name: Build supported Windows GUI package
+        run: python scripts/build_windows.py --target gui
+
+      - name: Verify packaged GUI output shape
+        run: python scripts/verify_windows_build.py --target gui
+
+      - name: Build packaged CLI companion
+        run: python scripts/build_windows.py --target cli
+
+      - name: Verify packaged CLI output shape
+        run: python scripts/verify_windows_build.py --target cli
+
+      - name: Run packaged CLI smoke test
+        run: python scripts/smoke_windows_cli.py
+
+      - name: Package portable bundles into release archives
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Compress-Archive -Path dist/windows/Dan/Dan -DestinationPath "release-assets/Dan-$version-windows-gui.zip" -Force
+          Compress-Archive -Path dist/windows/DanCLI/DanCLI -DestinationPath "release-assets/Dan-$version-windows-cli.zip" -Force
+          Get-ChildItem release-assets
+
+      - name: Determine prerelease flag
+        id: prerelease
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_name }}" -like "*-*") {
+            "prerelease=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "prerelease=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Publish GitHub release with portable artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          generate_release_notes: true
+          prerelease: ${{ steps.prerelease.outputs.prerelease }}
+          fail_on_unmatched_files: true

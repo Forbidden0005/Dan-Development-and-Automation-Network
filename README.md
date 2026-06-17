@@ -111,6 +111,7 @@ Portable output is written under `dist/windows/`. The current packaging path tar
 The default core build excludes heavyweight optional ML and vision stacks unless you opt into `--with-ml` or `--with-vision`.
 GitHub Actions now includes a Windows packaging job that builds and verifies the supported GUI artifact.
 That Windows packaging job also builds the CLI companion and runs a packaged CLI smoke test against the built executable.
+Pushing a `v*.*.*` tag triggers `.github/workflows/release.yml`, which builds, verifies, and smoke-tests the portable GUI + CLI bundles, then publishes them as downloadable GitHub Release assets. See [RELEASE.md](/C:/Users/tyler/Desktop/Dan/RELEASE.md).
 
 ## Repository Map
 
@@ -124,7 +125,7 @@ That Windows packaging job also builds the CLI companion and runs a packaged CLI
 
 - Top-level repository layout is still too noisy for long-term maintenance.
 - The legacy GUI file still backs shared controller behavior and should be extracted or retired carefully.
-- Windows packaging and installer strategy are not yet defined.
+- Windows packaging is defined (portable `onedir` builds, automated release publishing on tags); a signed installer `.exe` is not yet wired on this branch.
 - Operational docs existed in conflicting versions and required reset.
 - Several historical analysis documents should be archived or reorganized instead of living at repo root forever.
 - The current packaging flow produces portable builds; installer work is still pending.
