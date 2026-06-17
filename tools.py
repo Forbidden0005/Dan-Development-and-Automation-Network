@@ -41,6 +41,25 @@ def _safe_path(path: str) -> Path:
         raise
 
 
+def _enforce_claim(path: Path) -> None:
+    """Block writes when another sub-agent already owns the path."""
+    try:
+        from workers import enforce_mutation_claim
+
+        enforce_mutation_claim(str(path))
+    except ImportError:
+        return
+
+
+def _request_destructive_approval(action: str, reason: str, paths: list[Path]) -> None:
+    try:
+        from workers import request_destructive_approval
+
+        request_destructive_approval(action, reason, [str(path) for path in paths])
+    except ImportError:
+        return
+
+
 def _diff_text(old: str, new: str, filename: str) -> str:
     """Generate a unified diff."""
     old_lines = old.splitlines(keepends=True)
@@ -181,6 +200,7 @@ def write_file(path: str, content: str, create_dirs: bool = True) -> str:
         content = _validate_text_payload("content", content, max_length=1000000)
 
         p = _safe_path(path)
+        _enforce_claim(p)
         if create_dirs:
             p.parent.mkdir(parents=True, exist_ok=True)
 
@@ -218,6 +238,7 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
         new_text = _validate_text_payload("new_text", new_text, max_length=100000)
 
         p = _safe_path(path)
+        _enforce_claim(p)
         if not p.exists():
             return f"Error: File not found: {path}"
 
@@ -326,7 +347,7 @@ def grep_search(pattern: str, path: str = ".", include: str = "") -> str:
 
         regex = re.compile(pattern, re.IGNORECASE)
     except re.error as e:
-        return f"Error: Invalid regex: {e}"
+        return f"Invalid regex pattern: {e}"
     except ValueError as e:
         return f"Security error: {e}"
 
@@ -351,6 +372,11 @@ def grep_search(pattern: str, path: str = ".", include: str = "") -> str:
             continue
 
     return "\n".join(results) if results else f"No matches for '{pattern}' in {path}"
+
+
+def grep_files(pattern: str, path: str = ".", include: str = "") -> str:
+    """Backward-compatible alias for grep_search."""
+    return grep_search(pattern, path, include)
 
 
 def list_directory(path: str = ".") -> str:
@@ -401,6 +427,7 @@ def append_file(path: str, content: str) -> str:
         if len(content) > 1_000_000:
             return "Error: Content too large to append (max 1MB per call)"
         p = _safe_path(path)
+        _enforce_claim(p)
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8") as fh:
             fh.write(content)
@@ -440,6 +467,9 @@ def move_path(src: str, dest: str) -> str:
     try:
         s = _safe_path(sanitize_user_input(src, max_length=500))
         d = _safe_path(sanitize_user_input(dest, max_length=500))
+        _enforce_claim(s)
+        _enforce_claim(d)
+        _request_destructive_approval("move", "sub-agent move requires approval", [s, d])
         if not s.exists():
             return f"Error: Source not found: {src}"
         d.parent.mkdir(parents=True, exist_ok=True)
@@ -457,6 +487,7 @@ def copy_file(src: str, dest: str) -> str:
     try:
         s = _safe_path(sanitize_user_input(src, max_length=500))
         d = _safe_path(sanitize_user_input(dest, max_length=500))
+        _enforce_claim(d)
         if not s.exists():
             return f"Error: Source not found: {src}"
         if not s.is_file():
@@ -559,7 +590,7 @@ def http_request(
 def register_core_tools() -> None:
     """Register all core tools."""
 
-    registry.register(
+    registry.register_tool(
         name="Read",
         description="Read a file's contents.",
         parameters={
@@ -583,7 +614,7 @@ def register_core_tools() -> None:
         safety_level=1,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Write",
         description="Write content to a file. Shows diff of changes.",
         parameters={
@@ -598,7 +629,7 @@ def register_core_tools() -> None:
         safety_level=2,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Edit",
         description="Replace exact text in a file. old_text must match exactly once.",
         parameters={
@@ -617,7 +648,7 @@ def register_core_tools() -> None:
         safety_level=2,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Bash",
         description="Execute a shell command.",
         parameters={
@@ -632,7 +663,7 @@ def register_core_tools() -> None:
         safety_level=3,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Glob",
         description="Find files matching a glob pattern.",
         parameters={
@@ -647,7 +678,7 @@ def register_core_tools() -> None:
         safety_level=1,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Grep",
         description="Search for a regex pattern in files.",
         parameters={
@@ -667,7 +698,7 @@ def register_core_tools() -> None:
         safety_level=1,
     )
 
-    registry.register(
+    registry.register_tool(
         name="ListDir",
         description="List directory contents as a tree.",
         parameters={
@@ -682,7 +713,7 @@ def register_core_tools() -> None:
 
     # ── New tools ─────────────────────────────────────────────────────────────
 
-    registry.register(
+    registry.register_tool(
         name="Append",
         description="Append content to a file. Creates the file if it does not exist.",
         parameters={
@@ -697,7 +728,7 @@ def register_core_tools() -> None:
         safety_level=2,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Diff",
         description="Show a unified diff between two files.",
         parameters={
@@ -712,7 +743,7 @@ def register_core_tools() -> None:
         safety_level=1,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Move",
         description="Move or rename a file or directory.",
         parameters={
@@ -727,7 +758,7 @@ def register_core_tools() -> None:
         safety_level=2,
     )
 
-    registry.register(
+    registry.register_tool(
         name="Copy",
         description="Copy a file to a new location.",
         parameters={
@@ -742,7 +773,7 @@ def register_core_tools() -> None:
         safety_level=2,
     )
 
-    registry.register(
+    registry.register_tool(
         name="HttpRequest",
         description=(
             "Make an HTTP request (GET, POST, etc.) and return the response. "

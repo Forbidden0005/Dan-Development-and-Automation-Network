@@ -84,6 +84,7 @@ import uuid
 from config import USER_DATA_DIR
 from dan_gui_support import register_all_tools
 from providers import get_provider
+from workers import configure_worker_runner
 
 logger = logging.getLogger("dan.gui.controller")
 
@@ -113,6 +114,7 @@ class DanControllerMixin:
         """
         # Delegate to the canonical entry point shared by CLI and GUI.
         register_all_tools()
+        configure_worker_runner(self._worker_runner)
         try:
             self.provider = get_provider(self.provider_name, self.model_name)
         except Exception as exc:  # noqa: BLE001
@@ -121,6 +123,13 @@ class DanControllerMixin:
                 500,
                 lambda message=msg: self._inline_error(f"Provider init failed: {message}"),
             )
+
+    def _worker_runner(self, prompt: str, worker_type: str, session_id: str) -> str:
+        from agent import run_agent_loop
+
+        provider = get_provider(self.provider_name, self.model_name)
+        response, _ = run_agent_loop(prompt, [], provider)
+        return response
 
     # ------------------------------------------------------------------
     # Keyboard shortcuts

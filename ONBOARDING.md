@@ -1,26 +1,34 @@
 # Onboarding
 
-This file is the shortest safe path into the repo.
+This is the shortest safe path into the repo.
 
 ## Read In This Order
 
 1. [PROJECT_INTEGRITY.md](/C:/Users/tyler/Desktop/Dan/PROJECT_INTEGRITY.md)
 2. [ROADMAP.md](/C:/Users/tyler/Desktop/Dan/ROADMAP.md)
 3. [README.md](/C:/Users/tyler/Desktop/Dan/README.md)
-4. [CODEX.md](/C:/Users/tyler/Desktop/Dan/CODEX.md)
+4. [INSTALL.md](/C:/Users/tyler/Desktop/Dan/INSTALL.md)
+5. [RELEASE.md](/C:/Users/tyler/Desktop/Dan/RELEASE.md)
+6. [CODEX.md](/C:/Users/tyler/Desktop/Dan/CODEX.md)
 
-Do not start implementation before reading the roadmap. The roadmap is the canonical source for direction, priorities, active cleanup items, and completed work.
+Do not start implementation before reading the roadmap. `ROADMAP.md` is the canonical direction document.
 
-## What This Project Is
+## Project Shape
 
-Dan is a local-first Python development assistant for Windows. It is not a web SaaS, not a cloud-only agent, and not a generic prototype sandbox. The target outcome is a dependable desktop application with clear boundaries, secure local execution, predictable setup, and a maintainable release path.
+Dan is a local-first Windows development assistant implemented in Python.
 
-## What You Should Assume
+It is:
 
-- Existing behavior matters. Avoid broad rewrites.
-- The repo contains historical documentation drift. Trust the current roadmap, not old assumptions.
-- The codebase is functional now, but not yet packaged and disciplined like a finished Windows product.
-- Safety and explicitness matter more than cleverness.
+- a desktop GUI plus CLI
+- local-tooling focused
+- Windows-first
+- packaging-aware
+
+It is not:
+
+- a cloud-first SaaS
+- an unbounded autonomous agent
+- a generic prototype sandbox
 
 ## First-Time Setup
 
@@ -32,7 +40,7 @@ python -m pip install -r requirements.txt
 python -m pip install -r requirements-dev.txt
 ```
 
-Optional:
+Optional extras:
 
 ```powershell
 python -m pip install -r requirements-vision.txt
@@ -46,33 +54,38 @@ python -m pytest -q
 python -m ruff check .
 python scripts/repo_health.py
 python Dan.py --doctor --target cli
+python Dan.py --doctor --target gui
+python scripts/build_windows.py --target gui --dry-run
+python scripts/release_artifacts.py
+python scripts/release_readiness.py
 ```
 
-Do not claim the app is healthy unless you ran the checks you are citing.
+Do not cite health or readiness without running the checks you reference.
 
-## Current Architectural Shape
+## Current Architecture
 
-- `Dan.py`: CLI entry point and main registration flow
-- `dan_gui_modern.py`: supported Claude-inspired desktop GUI shell
-- `dan_gui.py`: legacy GUI shell and current backing controller behavior for the modern shell
-- `providers.py` and `provider_*.py`: model provider layer
-- `tools.py`, `tools_secure.py`, `security_utils.py`: core tool and safety layer
-- `code_tools.py`, `code_execution.py`, `project_tools.py`, `git_tools.py`: development workflow tooling
+- `Dan.py`: CLI entry point
+- `dan_gui_modern.py`: supported desktop shell
+- `dan_gui_controller.py`: shared GUI controller behavior
+- `dan_gui.py`: deprecated legacy GUI shell, pending deletion approval
+- `providers.py` and `provider_*.py`: provider layer
+- `tools.py`, `security_utils.py`: canonical core tooling and safety layer
+- `tools_secure.py`: deprecated compatibility layer, pending deletion approval
+- `code_tools.py`, `code_execution.py`, `project_tools.py`, `git_tools.py`: dev workflow tooling
 - `knowledge/`, `web/`, `workers/`, `actions/`: tool families and support modules
-- `tests/`: pytest coverage for runtime behavior and repo hygiene
+- `tests/`: pytest coverage
 
-## Non-Negotiable Working Rules
+## Non-Negotiable Rules
 
-- Read the roadmap before every task.
-- Use the roadmap to decide whether work is active, deferred, or out of scope.
-- Update the roadmap after every completed task.
-- If a cleanup action is destructive or hard to reverse, stop and get explicit approval.
-- If docs and code disagree, fix the docs or record the mismatch instead of hand-waving it away.
+- Read `ROADMAP.md` before every task.
+- Use `ROADMAP.md` to determine whether work is active, deferred, or out of scope.
+- Update `ROADMAP.md` after every completed task.
+- Stop for explicit approval before destructive cleanup.
+- If docs and code disagree, fix the drift or record it plainly.
 
 ## Immediate Priorities
 
-- Keep the docs truthful.
-- Reduce root-level clutter without deleting uncertain history.
-- Establish the official Windows packaging and distribution path.
-- Harden the supported desktop UX path and extract legacy GUI/controller coupling carefully.
-- Tighten configuration, state storage, diagnostics, and release verification.
+- Keep the docs and roadmap truthful.
+- Remove deprecated files only after explicit approval.
+- Clear the remaining workstation-level release blocker: real signing certificate material.
+- Continue tightening the repo toward a production-grade Windows release path.

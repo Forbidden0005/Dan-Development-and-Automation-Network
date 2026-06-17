@@ -162,7 +162,9 @@ class OllamaProvider:
                 json=payload,
                 timeout=self.timeout,
             ) as r:
-                r.raise_for_status()
+                raise_for_status = getattr(r, "raise_for_status", None)
+                if callable(raise_for_status):
+                    raise_for_status()
                 for line in r.iter_lines():
                     if not line:
                         continue

@@ -25,10 +25,12 @@ from dan_gui_support import (
     session_title_from_file,
     timestamp_label,
 )
+from dan_gui_components import measure_textbox_height
 from dan_gui_theme import THEME_DARK, THEME_LIGHT, get_theme_tokens, normalize_theme, theme_from_config
 from gui_compat import ctk, ensure_gui_runtime
 from providers import get_provider
 from tool_registry import get_all_tools
+from workers import get_manager
 import session_mgr
 
 
@@ -162,8 +164,7 @@ class ModernLiveBubble:
 
     def _fit(self):
         try:
-            lines = int(self.textbox.index("end-1c").split(".")[0])
-            self.textbox.configure(height=min(max(lines * 22 + 16, 50), 700))
+            self.textbox.configure(height=measure_textbox_height(self.textbox))
         except Exception:
             pass
 
@@ -204,8 +205,8 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
     inheritance chain — this shell is fully self-contained.
     """
 
-    SIDEBAR_W = 304
-    RIGHT_RAIL_W = 264
+    SIDEBAR_W = 276
+    RIGHT_RAIL_W = 236
 
     def __init__(self):
         from api_config import load_config
@@ -322,30 +323,24 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self._build_status_bar()
 
     def _build_header(self):
-        header = ctk.CTkFrame(self, height=64, fg_color=self.ui.main, corner_radius=0)
+        header = ctk.CTkFrame(self, height=52, fg_color=self.ui.main, corner_radius=0)
         header.grid(row=0, column=1, columnspan=2, sticky="ew")
         header.grid_propagate(False)
         header.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkFrame(header, fg_color="transparent")
-        title.grid(row=0, column=0, padx=24, pady=12, sticky="w")
-        self._label(title, "What do you want to build?", 18, "bold").grid(
+        title.grid(row=0, column=0, padx=20, pady=10, sticky="w")
+        self._label(title, "What do you want to build?", 16, "bold").grid(
             row=0, column=0, sticky="w"
         )
-        self._label(
-            title,
-            "Chat-first local workspace.",
-            11,
-            color=self.ui.text_subtle,
-        ).grid(row=1, column=0, sticky="w")
 
         controls = ctk.CTkFrame(header, fg_color="transparent")
-        controls.grid(row=0, column=1, padx=(8, 20), pady=12, sticky="e")
+        controls.grid(row=0, column=1, padx=(8, 16), pady=12, sticky="e")
 
         self._model_lbl = self._label(
             controls,
             f"  {self.model_name}  ",
-            11,
+            10,
             color=self.ui.text_muted,
         )
         self._model_lbl.grid(row=0, column=0, padx=(0, 8))
@@ -353,7 +348,7 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self._provider_lbl = self._label(
             controls,
             f"  {self.provider_name}  ",
-            11,
+            10,
             color=self.ui.text_subtle,
         )
         self._provider_lbl.grid(row=0, column=1, padx=(0, 8))
@@ -363,8 +358,8 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             controls,
             f"{target_theme.title()} mode",
             self._toggle_theme,
-            width=96,
-            height=32,
+            width=88,
+            height=28,
             border=True,
             text_color=self.ui.text_muted,
         )
@@ -374,8 +369,8 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             controls,
             "Prompts",
             self.show_prompts,
-            width=78,
-            height=32,
+            width=72,
+            height=28,
             border=True,
             text_color=self.ui.text_muted,
         ).grid(row=0, column=3, padx=(0, 8))
@@ -383,8 +378,8 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             controls,
             "Settings",
             self.show_settings,
-            width=84,
-            height=32,
+            width=78,
+            height=28,
             fg_color=self.ui.accent,
             hover_color=self.ui.accent_hover,
             text_color=self.ui.accent_text,
@@ -400,13 +395,13 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self.sidebar.grid_rowconfigure(4, weight=1)
 
         brand = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        brand.grid(row=0, column=0, padx=18, pady=(22, 16), sticky="ew")
+        brand.grid(row=0, column=0, padx=16, pady=(18, 14), sticky="ew")
         brand.grid_columnconfigure(1, weight=1)
 
         mark = ctk.CTkFrame(
             brand,
-            width=42,
-            height=42,
+            width=36,
+            height=36,
             fg_color=self.ui.accent_soft,
             corner_radius=12,
             border_width=1,
@@ -414,12 +409,12 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         )
         mark.grid(row=0, column=0, padx=(0, 12), sticky="w")
         mark.grid_propagate(False)
-        self._label(mark, "D", 24, "bold", color=self.ui.accent).place(
+        self._label(mark, "D", 20, "bold", color=self.ui.accent).place(
             relx=0.5, rely=0.5, anchor="center"
         )
 
-        self._label(brand, APP_NAME, 25, "bold").grid(row=0, column=1, sticky="sw")
-        self._label(brand, "Local-first development", 11, color=self.ui.text_subtle).grid(
+        self._label(brand, APP_NAME, 22, "bold").grid(row=0, column=1, sticky="sw")
+        self._label(brand, "Local-first development", 10, color=self.ui.text_subtle).grid(
             row=1, column=1, sticky="nw"
         )
 
@@ -427,13 +422,13 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             self.sidebar,
             "+  New chat",
             self.new_chat,
-            height=42,
+            height=38,
             fg_color=self.ui.accent,
             hover_color=self.ui.accent_hover,
             text_color=self.ui.accent_text,
             radius=10,
-            font=self._font(14, "bold"),
-        ).grid(row=1, column=0, padx=18, pady=(0, 16), sticky="ew")
+            font=self._font(13, "bold"),
+        ).grid(row=1, column=0, padx=16, pady=(0, 14), sticky="ew")
 
         if not hasattr(self, "_search_trace_registered"):
             self._search_var.trace_add("write", lambda *_: self.refresh_sidebar())
@@ -448,13 +443,13 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             text_color=self.ui.text,
             placeholder_text_color=self.ui.text_subtle,
             corner_radius=10,
-            height=36,
-            font=self._font(12),
+            height=32,
+            font=self._font(11),
         )
-        search.grid(row=2, column=0, padx=18, pady=(0, 14), sticky="ew")
+        search.grid(row=2, column=0, padx=16, pady=(0, 12), sticky="ew")
 
-        self._label(self.sidebar, "Recent", 12, "bold", color=self.ui.text_muted, anchor="w").grid(
-            row=3, column=0, padx=20, pady=(0, 4), sticky="ew"
+        self._label(self.sidebar, "Recent", 11, "bold", color=self.ui.text_muted, anchor="w").grid(
+            row=3, column=0, padx=18, pady=(0, 4), sticky="ew"
         )
 
         self.session_list = ctk.CTkScrollableFrame(
@@ -464,23 +459,23 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             scrollbar_button_color=self.ui.border_strong,
             scrollbar_button_hover_color=self.ui.accent_soft,
         )
-        self.session_list.grid(row=4, column=0, sticky="nsew", padx=8, pady=(0, 10))
+        self.session_list.grid(row=4, column=0, sticky="nsew", padx=8, pady=(0, 8))
         self.session_list.grid_columnconfigure(0, weight=1)
 
         nav = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        nav.grid(row=5, column=0, padx=18, pady=(0, 14), sticky="ew")
+        nav.grid(row=5, column=0, padx=16, pady=(0, 12), sticky="ew")
         nav.grid_columnconfigure(0, weight=1)
         self._sidebar_nav(nav, "Projects", "Project grouping is not configured yet.", 0)
         self._sidebar_nav(nav, "Artifacts", "Generated outputs will appear in the workspace rail.", 1)
         self._sidebar_nav(nav, "Settings", "Provider, model, and appearance controls.", 2)
 
         footer = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        footer.grid(row=6, column=0, padx=18, pady=(0, 16), sticky="ew")
+        footer.grid(row=6, column=0, padx=16, pady=(0, 14), sticky="ew")
         footer.grid_columnconfigure(0, weight=1)
         self._label(
             footer,
             "Local",
-            12,
+            11,
             "bold",
             color=self.ui.success,
             anchor="w",
@@ -488,10 +483,10 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self._label(
             footer,
             f"{self.provider_name} - {self.model_name}",
-            10,
+            9,
             color=self.ui.text_subtle,
             anchor="w",
-            wraplength=240,
+            wraplength=220,
         ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
         tk.Frame(self.sidebar, width=1, bg=self.ui.border).place(
@@ -558,20 +553,20 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self._label(
             frame,
             self._session_title(session),
-            12,
+            11,
             "bold" if active else "normal",
             color=self.ui.text if active else self.ui.text_muted,
             anchor="w",
             justify="left",
-            wraplength=220,
-        ).grid(row=0, column=0, padx=12, pady=(9, 1), sticky="ew")
+            wraplength=204,
+        ).grid(row=0, column=0, padx=10, pady=(8, 1), sticky="ew")
         self._label(
             frame,
             self._format_date(session["updated"]),
-            10,
+            9,
             color=self.ui.accent if active else self.ui.text_subtle,
             anchor="w",
-        ).grid(row=1, column=0, padx=12, pady=(0, 9), sticky="w")
+        ).grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
 
         filename = session["filename"]
 
@@ -596,23 +591,24 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self._chat.grid(row=1, column=1, sticky="nsew")
         self._chat.grid_columnconfigure(0, weight=1)
         self._chat.grid_rowconfigure(1, weight=1)
+        self._welcome_visible = True
 
-        welcome = ctk.CTkFrame(self._chat, fg_color="transparent")
-        welcome.grid(row=0, column=0, sticky="ew", padx=42, pady=(26, 14))
-        welcome.grid_columnconfigure(0, weight=1)
+        self._welcome_frame = ctk.CTkFrame(self._chat, fg_color="transparent")
+        self._welcome_frame.grid(row=0, column=0, sticky="ew", padx=28, pady=(16, 8))
+        self._welcome_frame.grid_columnconfigure(0, weight=1)
 
-        self._label(welcome, "What do you want to build?", 30, "bold", anchor="center").grid(
+        self._label(self._welcome_frame, "What do you want to build?", 24, "bold", anchor="center").grid(
             row=0, column=0, sticky="ew"
         )
         self._label(
-            welcome,
+            self._welcome_frame,
             "Dan works locally with your projects, tools, and saved context.",
-            14,
+            12,
             color=self.ui.text_muted,
             anchor="center",
-        ).grid(row=1, column=0, pady=(6, 14), sticky="ew")
+        ).grid(row=1, column=0, pady=(4, 10), sticky="ew")
 
-        starters = ctk.CTkFrame(welcome, fg_color="transparent")
+        starters = ctk.CTkFrame(self._welcome_frame, fg_color="transparent")
         starters.grid(row=2, column=0)
         prompts = [
             ("Review repo", "Review this repository and identify the highest-risk issues."),
@@ -624,8 +620,8 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
                 starters,
                 label,
                 lambda value=prompt: self._inject_prompt(value),
-                height=30,
-                radius=15,
+                height=28,
+                radius=14,
                 border=True,
                 text_color=self.ui.text_muted,
             ).grid(row=0, column=index, padx=(0, 8))
@@ -633,35 +629,35 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         board = ctk.CTkFrame(
             self._chat,
             fg_color=self.ui.background,
-            corner_radius=18,
+            corner_radius=16,
             border_width=1,
             border_color=self.ui.border,
         )
-        board.grid(row=1, column=0, sticky="nsew", padx=34, pady=(0, 12))
+        board.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 10))
         board.grid_columnconfigure(0, weight=1)
         board.grid_rowconfigure(0, weight=1)
 
         self.messages_container = ctk.CTkScrollableFrame(
             board,
             fg_color="transparent",
-            corner_radius=14,
+            corner_radius=12,
             scrollbar_button_color=self.ui.border_strong,
             scrollbar_button_hover_color=self.ui.accent_soft,
         )
-        self.messages_container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        self.messages_container.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.messages_container.grid_columnconfigure(0, weight=1)
 
         self._build_input_area()
 
     def _build_input_area(self):
         outer = ctk.CTkFrame(self._chat, fg_color="transparent")
-        outer.grid(row=2, column=0, sticky="ew", padx=34, pady=(0, 22))
+        outer.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 16))
         outer.grid_columnconfigure(0, weight=1)
 
         composer = ctk.CTkFrame(
             outer,
             fg_color=self.ui.surface,
-            corner_radius=18,
+            corner_radius=16,
             border_width=1,
             border_color=self.ui.border_strong,
         )
@@ -670,28 +666,29 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
 
         self.input_box = ctk.CTkTextbox(
             composer,
-            height=86,
+            height=74,
             fg_color=self.ui.input_bg,
             border_width=0,
-            corner_radius=14,
-            font=self._font(14),
+            corner_radius=12,
+            font=self._font(13),
             text_color=self.ui.text,
             wrap="word",
+            activate_scrollbars=False,
         )
-        self.input_box.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
+        self.input_box.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 6))
         self.input_box.bind("<Return>", self._handle_enter)
         self.input_box.bind("<Shift-Return>", lambda _event: None)
 
         bottom = ctk.CTkFrame(composer, fg_color="transparent")
-        bottom.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
+        bottom.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
         bottom.grid_columnconfigure(2, weight=1)
 
         self._button(
             bottom,
             "Attach",
             self.attach_file,
-            width=72,
-            height=32,
+            width=68,
+            height=30,
             border=True,
             text_color=self.ui.text_muted,
         ).grid(row=0, column=0, padx=(0, 8))
@@ -699,8 +696,8 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             bottom,
             "Actions",
             self.show_actions,
-            width=78,
-            height=32,
+            width=72,
+            height=30,
             border=True,
             text_color=self.ui.text_muted,
         ).grid(row=0, column=1, padx=(0, 8))
@@ -710,27 +707,27 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
             bottom,
             variable=self.model_var,
             values=MODEL_CHOICES,
-            width=210,
-            height=32,
+            width=190,
+            height=30,
             corner_radius=10,
             fg_color=self.ui.surface_alt,
             button_color=self.ui.border_strong,
             button_hover_color=self.ui.accent_soft,
             text_color=self.ui.text_muted,
-            font=self._font(12),
+            font=self._font(11),
             command=self.change_model,
         ).grid(row=0, column=3, padx=(8, 8))
 
         self.send_btn = ctk.CTkButton(
             bottom,
             text="Send",
-            width=78,
-            height=34,
+            width=72,
+            height=30,
             fg_color=self.ui.accent,
             hover_color=self.ui.accent_hover,
             text_color=self.ui.accent_text,
             corner_radius=10,
-            font=self._font(13, "bold"),
+            font=self._font(12, "bold"),
             command=self.send_message,
         )
         self.send_btn.grid(row=0, column=4)
@@ -744,12 +741,13 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
 
         tk.Frame(rail, width=1, bg=self.ui.border).place(x=0, y=0, relheight=1)
 
-        self._label(rail, "Workspace", 13, "bold", color=self.ui.text_muted, anchor="w").grid(
-            row=0, column=0, padx=18, pady=(14, 6), sticky="ew"
+        self._label(rail, "Workspace", 12, "bold", color=self.ui.text_muted, anchor="w").grid(
+            row=0, column=0, padx=14, pady=(12, 6), sticky="ew"
         )
 
         panes = [
             ("Files", "Attach or inspect project files through chat.", "Available"),
+            ("Agents", "Inspect durable sub-agents, claims, and approvals.", "Live"),
             ("Tools", "View registered local tools and actions.", "Available"),
             ("Preview", "No rendered preview is open.", "Empty"),
             ("Terminal", "Commands run through secured chat tools.", "Guarded"),
@@ -757,36 +755,48 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         for index, pane in enumerate(panes, start=1):
             self._workspace_button(rail, *pane, row=index)
 
+        self._workspace_body = ctk.CTkLabel(
+            rail,
+            text="",
+            text_color=self.ui.text_subtle,
+            font=self._font(9),
+            justify="left",
+            anchor="nw",
+            wraplength=192,
+        )
+        self._workspace_body.grid(row=6, column=0, padx=14, pady=(8, 10), sticky="nsew")
+        rail.grid_rowconfigure(6, weight=1)
+
         footer = ctk.CTkFrame(rail, fg_color="transparent")
-        footer.grid(row=5, column=0, sticky="sew", padx=18, pady=(6, 12))
+        footer.grid(row=5, column=0, sticky="sew", padx=14, pady=(6, 10))
         self._label(
             footer,
             "Pane content opens only when backed by a real workflow.",
-            9,
+            8,
             color=self.ui.text_subtle,
             anchor="w",
-            wraplength=218,
+            wraplength=194,
             justify="left",
         ).grid(row=0, column=0, sticky="ew")
         self._select_workspace_pane(self._workspace_pane)
 
     def _workspace_button(self, parent, title: str, description: str, status: str, row: int):
         frame = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=12)
-        frame.grid(row=row, column=0, padx=16, pady=(0, 4), sticky="ew")
+        frame.grid(row=row, column=0, padx=12, pady=(0, 4), sticky="ew")
         frame.grid_columnconfigure(0, weight=1)
-        self._label(frame, title, 13, "bold", anchor="w").grid(
-            row=0, column=0, padx=12, pady=(7, 0), sticky="ew"
+        self._label(frame, title, 12, "bold", anchor="w").grid(
+            row=0, column=0, padx=10, pady=(7, 0), sticky="ew"
         )
         self._label(
             frame,
             description,
-            9,
+            8,
             color=self.ui.text_subtle,
             anchor="w",
-            wraplength=210,
-        ).grid(row=1, column=0, padx=12, pady=(1, 0), sticky="ew")
-        self._label(frame, status, 9, "bold", color=self.ui.accent, anchor="w").grid(
-            row=2, column=0, padx=12, pady=(0, 7), sticky="ew"
+            wraplength=186,
+        ).grid(row=1, column=0, padx=10, pady=(1, 0), sticky="ew")
+        self._label(frame, status, 8, "bold", color=self.ui.accent, anchor="w").grid(
+            row=2, column=0, padx=10, pady=(0, 7), sticky="ew"
         )
 
         def click(_event=None, pane=title):
@@ -801,6 +811,40 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self._workspace_pane = pane
         for title, button in self._workspace_buttons.items():
             button.configure(fg_color=self.ui.selected if title == pane else "transparent")
+        self._refresh_workspace_pane()
+
+    def _refresh_workspace_pane(self):
+        if hasattr(self, "_workspace_body"):
+            self._workspace_body.configure(text=self._workspace_pane_text(self._workspace_pane))
+        if self._workspace_pane == "Agents" and "tk" in self.__dict__:
+            self.after(1000, self._refresh_workspace_pane)
+
+    def _workspace_pane_text(self, pane: str) -> str:
+        if pane == "Agents":
+            return self._workspace_agents_snapshot()
+        if pane == "Files":
+            return "Files are handled through chat-backed reads, writes, edits, and project scans."
+        if pane == "Tools":
+            return "Use /tools in the CLI or chat-triggered tool calls to inspect the active tool surface."
+        if pane == "Preview":
+            return "No rendered preview is open."
+        if pane == "Terminal":
+            return "Commands run through secured chat tools and approved sub-agent workflows."
+        return ""
+
+    def _workspace_agents_snapshot(self) -> str:
+        sessions = get_manager().list_sessions()
+        if not sessions:
+            return "No sub-agents are active."
+        lines = []
+        for session in sessions[-8:]:
+            claim_count = len(session.claimed_paths)
+            blocked = " approval" if session.pending_approval else ""
+            lines.append(
+                f"{session.id} {session.status}{blocked} claims={claim_count} {session.worker_type}"
+            )
+            lines.append(session.prompt[:96])
+        return "\n".join(lines)
 
     def _build_status_bar(self):
         bar = ctk.CTkFrame(self, height=34, fg_color=self.ui.main, corner_radius=0)
@@ -840,7 +884,20 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self.input_box.insert("1.0", text)
         self.input_box.focus()
 
+    def _set_welcome_visible(self, visible: bool):
+        frame = getattr(self, "_welcome_frame", None)
+        if frame is None:
+            self._welcome_visible = visible
+            return
+        if visible:
+            frame.grid()
+        else:
+            frame.grid_remove()
+        self._welcome_visible = visible
+
     def add_message(self, role: str, content: str):
+        if role == "user":
+            self._set_welcome_visible(False)
         if role == "user":
             self._add_user_message(content)
         elif role == "error":
@@ -864,7 +921,7 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         bubble.grid(row=0, column=1, sticky="e")
         bubble.grid_columnconfigure(0, weight=1)
 
-        textbox = self._message_textbox(bubble, content, self.ui.user_text, max_height=420)
+        textbox = self._message_textbox(bubble, content, self.ui.user_text)
         textbox.grid(row=0, column=0, padx=14, pady=(10, 4), sticky="ew")
         self._label(
             bubble,
@@ -906,7 +963,7 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         bubble.grid(row=0, column=1, sticky="ew")
         bubble.grid_columnconfigure(0, weight=1)
 
-        textbox = self._message_textbox(bubble, content, self.ui.text, max_height=520)
+        textbox = self._message_textbox(bubble, content, self.ui.text)
         textbox.grid(row=0, column=0, padx=14, pady=(10, 4), sticky="ew")
         self._label(
             bubble,
@@ -917,7 +974,7 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         ).grid(row=1, column=0, padx=14, pady=(0, 8), sticky="w")
         self._attach_copy_hover(bubble, textbox)
 
-    def _message_textbox(self, parent, content: str, text_color: str, max_height: int):
+    def _message_textbox(self, parent, content: str, text_color: str, max_height: int | None = None):
         textbox = ctk.CTkTextbox(
             parent,
             fg_color="transparent",
@@ -930,8 +987,10 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         )
         textbox.insert("1.0", content)
         textbox.configure(state="disabled")
-        lines = int(textbox.index("end-1c").split(".")[0])
-        textbox.configure(height=min(max(lines * 22 + 16, 46), max_height))
+        height = measure_textbox_height(textbox, minimum=46)
+        if max_height is not None:
+            height = min(height, max_height)
+        textbox.configure(height=height)
         return textbox
 
     def _add_error_message(self, content: str):
@@ -1038,6 +1097,7 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self._status_dot.configure(text_color=self.ui.success)
         self._status_txt.configure(text="Ready")
         self._update_tokens()
+        self._refresh_workspace_pane()
         self.input_box.focus()
         self._scroll_to_bottom()
 
@@ -1059,6 +1119,7 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
         self.messages = []
         self._session_id = str(uuid.uuid4())[:8]
         self._clear_chat()
+        self._set_welcome_visible(True)
         self._update_tokens()
         self.add_message(
             "assistant",
@@ -1086,6 +1147,7 @@ class DanModernGUI(ctk.CTk, DanControllerMixin):
                 return False
             self.messages = messages
             self._session_id = data.get("session_id", self._session_id)
+            self._set_welcome_visible(not any(message.get("role") == "user" for message in messages))
             self._render_messages(messages)
             self._update_tokens()
             return True

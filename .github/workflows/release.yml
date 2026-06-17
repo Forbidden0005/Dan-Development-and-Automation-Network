@@ -1,0 +1,157 @@
+name: Release
+
+# Triggered when a version tag is pushed (e.g. v2.5.1).
+# Builds the Windows GUI bundle, CLI companion, and Inno Setup installer,
+# then creates a GitHub Release and attaches the installer .exe as a
+# downloadable release asset.
+#
+# Prerequisites:
+#   - The release version must be synchronized across config.py,
+#     pyproject.toml, and installer/Dan.iss, and must match the tag
+#     (e.g. tag v2.5.1 → all three version sources = "2.5.1").
+#   - The repository must have write permission on the GITHUB_TOKEN
+#     (default for Actions in most repository configurations).
+#
+# Release asset produced:
+#   dist/installer/Dan-<version>-setup.exe
+#
+# To cut a release:
+#   1. Bump version in config.py, pyproject.toml, and installer/Dan.iss.
+#   2. Commit and merge to main.
+#   3. git tag v<version> && git push origin v<version>
+#   This workflow runs automatically on the tag push.
+#
+# Actions used:
+#   softprops/action-gh-release@v2 — actively maintained; replaces the
+#   deprecated actions/create-release@v1 + actions/upload-release-asset@v1
+#   pair. Combines release creation and asset upload in one step.
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    permissions:
+      contents: write   # needed to create a GitHub Release and upload assets
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-packaging.txt
+
+      - name: Verify release version sync
+        run: python scripts/build_windows.py --target gui --dry-run
+
+      - name: Prepare code-signing certificate
+        if: ${{ secrets.DAN_SIGN_PFX_BASE64 != '' && secrets.DAN_SIGN_PFX_PASSWORD != '' }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "dan-signing.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String("${{ secrets.DAN_SIGN_PFX_BASE64 }}"))
+          echo "DAN_SIGN_PFX=$certPath" >> $env:GITHUB_ENV
+          echo "DAN_SIGN_PFX_PASSWORD=${{ secrets.DAN_SIGN_PFX_PASSWORD }}" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      # ── Build portable bundles ─────────────────────────────────────────────
+
+      - name: Build Windows GUI bundle
+        run: |
+          $signArgs = @()
+          if ($env:DAN_SIGN_PFX) { $signArgs += "--sign" }
+          python scripts/build_windows.py --target gui @signArgs
+        shell: pwsh
+
+      - name: Verify GUI bundle shape
+        run: python scripts/verify_windows_build.py --target gui
+
+      - name: Build CLI companion
+        run: |
+          $signArgs = @()
+          if ($env:DAN_SIGN_PFX) { $signArgs += "--sign" }
+          python scripts/build_windows.py --target cli @signArgs
+        shell: pwsh
+
+      - name: Verify CLI bundle shape
+        run: python scripts/verify_windows_build.py --target cli
+
+      - name: Run CLI smoke test
+        run: python scripts/smoke_windows_cli.py
+
+      # ── Build installer ────────────────────────────────────────────────────
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        run: |
+          $signArgs = @()
+          if ($env:DAN_SIGN_PFX) { $signArgs += "--sign" }
+          python scripts/build_windows.py --installer-only @signArgs
+        shell: pwsh
+
+      - name: Generate release integrity artifacts
+        run: python scripts/release_artifacts.py
+
+      # ── Determine release metadata ─────────────────────────────────────────
+
+      - name: Extract version from tag
+        id: version
+        # Tag is refs/tags/v2.5.1 → strip the leading 'v'
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      # ── Create GitHub Release and upload asset ─────────────────────────────
+      - name: Verify tag matches synchronized repo version
+        run: python scripts/build_windows.py --target gui --dry-run --expect-version "${{ steps.version.outputs.version }}"
+
+      # softprops/action-gh-release@v2 replaces the deprecated
+      # actions/create-release@v1 + actions/upload-release-asset@v1 pair.
+      # It creates the release and attaches files in a single step.
+
+      - name: Create GitHub Release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Dan ${{ steps.version.outputs.version }}"
+          body: |
+            ## Dan ${{ steps.version.outputs.version }}
+
+            ### Installation
+
+            Download and run the installer below.  No administrator rights are
+            required (per-user install by default).
+
+            See [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/INSTALL.md)
+            for full setup instructions and data directory locations.
+
+            ### What's included
+
+            - `Dan.exe` — Desktop GUI shell
+            - `DanCLI.exe` — CLI companion (optional PATH registration offered during install)
+
+            ### Release process
+
+            See [RELEASE.md](https://github.com/${{ github.repository }}/blob/main/RELEASE.md)
+            for the version scheme and pre-release checklist.
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/installer/Dan-${{ steps.version.outputs.version }}-setup.exe
+            dist/release/SHA256SUMS.txt
+            dist/release/release-manifest.json
+          fail_on_unmatched_files: true

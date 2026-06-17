@@ -52,6 +52,9 @@ jobs:
       - name: Run packaging unit tests
         run: pytest -q tests/test_build_windows.py tests/test_verify_windows_build.py tests/test_smoke_windows_cli.py
 
+      - name: Verify release version sync
+        run: python scripts/build_windows.py --target gui --dry-run
+
       - name: Build supported Windows GUI package
         run: python scripts/build_windows.py --target gui
 
@@ -79,4 +82,17 @@ jobs:
         with:
           name: dan-windows-cli
           path: dist/windows/DanCLI/DanCLI
+          if-no-files-found: error
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        run: python scripts/build_windows.py --installer-only
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dan-windows-installer
+          path: dist/installer/Dan-*-setup.exe
           if-no-files-found: error

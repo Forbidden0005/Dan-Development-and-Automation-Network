@@ -7,6 +7,37 @@ import tkinter as tk
 from gui_compat import ctk
 
 
+def measure_textbox_height(
+    textbox,
+    *,
+    minimum: int = 50,
+    line_height: int = 22,
+    padding: int = 16,
+) -> int:
+    """Measure textbox height using wrapped display lines when available."""
+    def _logical_lines() -> int:
+        try:
+            return int(textbox.index("end-1c").split(".")[0])
+        except Exception:
+            return 1
+
+    try:
+        try:
+            mapped = textbox.winfo_ismapped()
+            width = textbox.winfo_width()
+        except Exception:
+            mapped = 1
+            width = 2
+
+        if not mapped or width <= 1:
+            display_lines = _logical_lines()
+        else:
+            display_lines = textbox._textbox.count("1.0", "end-1c", "displaylines")[0]
+    except Exception:
+        display_lines = _logical_lines()
+    return max(display_lines * line_height + padding, minimum)
+
+
 def popup_base(parent, title: str, width: int, height: int, surface_color: str) -> ctk.CTkToplevel:
     """Create a standard modal popup window."""
     window = ctk.CTkToplevel(parent)
@@ -240,8 +271,7 @@ class LiveBubble:
 
     def _fit(self):
         try:
-            lines = int(self.textbox.index("end-1c").split(".")[0])
-            self.textbox.configure(height=min(max(lines * 22 + 16, 50), 700))
+            self.textbox.configure(height=measure_textbox_height(self.textbox))
         except Exception:
             pass
 

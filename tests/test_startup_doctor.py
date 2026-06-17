@@ -161,3 +161,22 @@ def test_startup_doctor_hides_dev_and_build_noise_when_packaged(tmp_path, monkey
     assert "Missing development packages:" not in report
     assert "Missing build-only packages:" not in report
     assert "pyinstaller" not in report
+
+
+def test_startup_doctor_recognizes_installed_pyinstaller_build_tooling(tmp_path, monkeypatch):
+    import code_tools
+
+    (tmp_path / "requirements-core.txt").write_text("httpx>=0.27.0\n", encoding="utf-8")
+    (tmp_path / "requirements-packaging.txt").write_text("pyinstaller>=6.10.0\n", encoding="utf-8")
+
+    def fake_find_spec(name, package=None):
+        if name in {"httpx", "PyInstaller"}:
+            return object()
+        return None
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+
+    report = code_tools.startup_doctor(str(tmp_path), provider="ollama", target="cli")
+
+    assert "Missing build-only packages:" not in report
+    assert "pyinstaller" not in report

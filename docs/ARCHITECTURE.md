@@ -2,6 +2,8 @@
 
 This document maps the module layout, ownership, and dependency relationships for Dan v2.5.x. Read this before making structural changes, adding new modules, or proposing refactors.
 
+Last updated: 2026-06-09 (steward pass 20) — reflects GUI decoupling pass, tool consolidation, deprecation annotations, and scripts additions from steward passes 5–19.
+
 ---
 
 ## Entry Points
@@ -9,8 +11,8 @@ This document maps the module layout, ownership, and dependency relationships fo
 | File | Role |
 |---|---|
 | `Dan.py` | CLI REPL — the primary entry point for terminal use. Contains the main loop, argument parsing, `--doctor` diagnostics, and startup flow. |
-| `dan_gui_modern.py` | **Supported** desktop shell. Claude-inspired, Dan-branded, theme-aware. Inherits from `DanGUI`. |
-| `dan_gui.py` | Legacy GUI and shared controller. `DanModernGUI` inherits from `DanGUI`. Do not retire without extracting the controller. |
+| `dan_gui_modern.py` | **Supported** desktop shell. Claude-inspired, Dan-branded, theme-aware. Inherits from `ctk.CTk` and `DanControllerMixin` directly — no longer coupled to `dan_gui.py`. |
+| `dan_gui.py` | **Deprecated** legacy visual shell. No external callers remain. Caller audit complete (steward pass 14); deprecation header added. Pending deletion — requires explicit user approval (Destructive Action Gate). |
 
 `Dan.py` and `dan_gui_modern.py` are the two user-facing paths. Everything else is a library or support module.
 
@@ -44,10 +46,10 @@ This document maps the module layout, ownership, and dependency relationships fo
 
 | Module | Role |
 |---|---|
-| `tool_registry.py` | Tool registration, lookup, and dispatch. Central registry all tools register into. |
-| `tools.py` | Core file/bash/search tools (uses `tools_secure.py` for the secure path). |
-| `tools_secure.py` | Secure tool implementations backed by `security_utils`. |
-| `security_utils.py` | Path validation, command allowlist, input sanitization, URL validation. See `docs/SECURITY_BOUNDARIES.md`. |
+| `tool_registry.py` | Tool registration, lookup, and dispatch. Central registry all tools register into. Includes audit log wiring and optional Level 3 confirmation gate. |
+| `tools.py` | **Primary** core tool implementation — file, bash, search tools with full security annotations, async read, and output truncation. |
+| `tools_secure.py` | **Deprecated** — original secure tool layer. All functionality consolidated into `tools.py` (steward pass 9). No Python file imports it except a historical comment in the test suite. Pending deletion — requires explicit user approval. |
+| `security_utils.py` | Path validation, command allowlist (`SAFE_COMMANDS` + `RESTRICTED_COMMAND_REQUIREMENTS`), input sanitization, URL validation, `ToolAuditLog`. See `docs/SECURITY_BOUNDARIES.md`. |
 
 ### Tool Families (Packages)
 
@@ -94,8 +96,9 @@ These are registered only when their dependencies are available. A missing depen
 
 | Module | Role |
 |---|---|
-| `dan_gui.py` | `DanGUI` — legacy visual shell and shared controller. Backed by `DanModernGUI`. |
-| `dan_gui_modern.py` | `DanModernGUI(DanGUI)` — the supported desktop shell. |
+| `dan_gui.py` | **Deprecated** legacy visual shell (`DanGUI`). No longer a base class of `DanModernGUI`. No external callers. Awaiting deletion approval. |
+| `dan_gui_controller.py` | `DanControllerMixin` — extracted non-visual controller logic (provider init, shortcuts, session load, shared helpers). Both GUI shells inherit from this. |
+| `dan_gui_modern.py` | `DanModernGUI(ctk.CTk, DanControllerMixin)` — the **supported** desktop shell. Inherits window behaviour from CTk and controller from `DanControllerMixin`. Self-contained. |
 | `dan_gui_support.py` | Pure helpers + `register_all_tools()`. No GUI imports; testable in isolation. |
 | `dan_gui_theme.py` | Theme token definitions (dark/light). |
 | `dan_gui_components.py` | Reusable UI helpers and chat widgets. |
@@ -112,10 +115,11 @@ These are registered only when their dependencies are available. A missing depen
 
 | Script | Role |
 |---|---|
-| `scripts/build_windows.py` | PyInstaller portable build for GUI and CLI. |
+| `scripts/build_windows.py` | PyInstaller portable build for GUI and CLI. Supports `--installer` / `--installer-only` for Inno Setup. Wires icon if `assets/dan_icon.ico` is present. |
 | `scripts/verify_windows_build.py` | Verifies packaged output shape after build. |
 | `scripts/smoke_windows_cli.py` | Packaged CLI smoke test — boots the built executable. |
 | `scripts/repo_health.py` | Repository health audit — compileall, pytest, ruff. |
+| `scripts/scan_secrets.py` | Git-aware secret scanner — Anthropic, OpenAI, Venice, AWS, generic credential patterns. Exit code 0/1/2. |
 | `scripts/with_server.py` | MCP server integration helper. |
 
 ---
@@ -125,32 +129,35 @@ These are registered only when their dependencies are available. A missing depen
 ```
 Dan.py / dan_gui_modern.py
   └─ agent.py
-       └─ tool_registry.py ← tools.py / tools_secure.py / code_tools.py / git_tools.py / ...
-            └─ security_utils.py
+       └─ tool_registry.py ← tools.py / code_tools.py / git_tools.py / ...
+            └─ security_utils.py (path/command validation, ToolAuditLog)
   └─ providers.py
        └─ provider_anthropic.py / provider_openai.py / provider_ollama.py / provider_venice.py
             └─ provider_types.py
   └─ context_mgr.py / cost_tracker.py / session_mgr.py
   └─ config.py (no imports from Dan itself)
 
-dan_gui_modern.py
-  └─ dan_gui.py (DanGUI — controller + legacy shell)
+dan_gui_modern.py (DanModernGUI)
+  └─ ctk.CTk (window)
+  └─ dan_gui_controller.py (DanControllerMixin — controller logic)
        └─ dan_gui_support.py → register_all_tools()
             └─ actions / knowledge / web / workers / skills
   └─ dan_gui_theme.py
   └─ dan_gui_components.py
   └─ gui_compat.py
+
+dan_gui.py (DanGUI — DEPRECATED, no longer in the live dependency chain)
 ```
 
 ---
 
 ## Known Coupling Issues
 
-- **`dan_gui.py` is both a controller and a visual shell.** `DanModernGUI` inherits from `DanGUI` to reuse the controller. This means retiring the legacy visual behavior requires extracting the controller first. `register_all_tools()` has been extracted into `dan_gui_support.py`. The next extraction target is `_init_dan()`.
+- **`dan_gui.py` coupling is resolved.** `DanControllerMixin` (in `dan_gui_controller.py`) holds all shared non-visual controller logic. `DanModernGUI` now inherits from `ctk.CTk + DanControllerMixin` directly. `dan_gui.py` is fully decoupled from the live dependency chain and is pending deletion (user approval required). No active coupling remains.
 
 - **Flat top-level module layout.** All Python modules live at the repository root. This is serviceable for a project of this size but will become harder to navigate as optional tool families grow. The packages (`actions/`, `knowledge/`, `web/`, `workers/`) are the natural model — future modules should follow that shape rather than adding more top-level `.py` files.
 
-- **`tools.py` and `tools_secure.py` overlap.** `tools.py` exists from before the secure layer was added. `tools_secure.py` is the current secure path. These should eventually be merged, but the merge is a non-trivial refactor. Document as a long-term target.
+- **`tools_secure.py` is deprecated.** All functionality was consolidated into `tools.py` (steward pass 9). `tools_secure.py` is no longer imported by any active module. Pending deletion — requires explicit user approval.
 
 ---
 
@@ -160,12 +167,13 @@ dan_gui_modern.py
 |---|---|---|
 | CLI entry | `Dan.py` | Active |
 | GUI entry (supported) | `dan_gui_modern.py` | Active |
-| GUI entry (legacy) | `dan_gui.py` | Legacy — controller still in use |
+| GUI entry (legacy) | `dan_gui.py` | **Deprecated** — decoupled; no callers; pending deletion (user approval required) |
+| GUI controller | `dan_gui_controller.py` | Active — `DanControllerMixin` used by `DanModernGUI` |
 | GUI support | `dan_gui_support.py`, `dan_gui_theme.py`, `dan_gui_components.py`, `gui_compat.py` | Active |
 | Agent loop | `agent.py` | Active |
 | Providers | `providers.py`, `provider_*.py`, `provider_types.py`, `api_config.py` | Active |
 | Tool registry | `tool_registry.py` | Active |
-| Core tools | `tools_secure.py` (preferred), `tools.py` (older) | Active (overlap) |
+| Core tools | `tools.py` (canonical), `tools_secure.py` (deprecated, pending deletion) | Active |
 | Security | `security_utils.py` | Active |
 | Development tools | `code_tools.py`, `code_execution.py`, `git_tools.py`, `project_tools.py`, `project_indexer.py`, `codebase_index.py` | Active |
 | Tool packages | `actions/`, `knowledge/`, `web/`, `workers/`, `skills.py` | Active |

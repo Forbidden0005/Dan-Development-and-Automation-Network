@@ -81,6 +81,7 @@ _PACKAGE_TO_IMPORTS = {
     "pytest": ("pytest",),
     "pytest-cov": ("pytest_cov",),
     "pytesseract": ("pytesseract",),
+    "pyinstaller": ("PyInstaller",),
     "ruff": ("ruff",),
     "scikit-learn": ("sklearn",),
     "tensorflow": ("tensorflow",),

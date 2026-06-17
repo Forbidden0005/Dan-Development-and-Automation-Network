@@ -34,8 +34,11 @@
 #define MyCliExeName   "DanCLI.exe"
 
 ; ── Source directories (relative to this script's location) ─────────────────
-#define GuiDistDir  "..\dist\windows\Dan"
-#define CliDistDir  "..\dist\windows\DanCLI"
+; PyInstaller --onedir --name Dan --distpath dist\windows\Dan produces:
+;   dist\windows\Dan\Dan\Dan.exe   (bundle inside distpath subfolder)
+; So we point one level deeper than the distpath to get the actual bundle.
+#define GuiDistDir  "..\dist\windows\Dan\Dan"
+#define CliDistDir  "..\dist\windows\DanCLI\DanCLI"
 
 ; ── Build output ─────────────────────────────────────────────────────────────
 #define OutputDir    "..\dist\installer"
@@ -44,10 +47,10 @@
 ; ── A stable GUID for the AppId — generate once, never change ───────────────
 ; This lets Windows identify upgrades vs. fresh installs correctly.
 ; If you fork Dan, generate a new GUID with: powershell -command "[guid]::NewGuid()"
-#define AppGUID "{6F3A2B7E-D4C8-4A91-B5F0-2E8D1C4F9A30}"
+#define AppGUID "6F3A2B7E-D4C8-4A91-B5F0-2E8D1C4F9A30"
 
 [Setup]
-AppId={#AppGUID}
+AppId={{{#AppGUID}}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -75,7 +78,6 @@ SolidCompression=yes
 ; Visual style
 WizardStyle=modern
 SetupIconFile=..\assets\dan_icon.ico
-; ^ If dan_icon.ico doesn't exist yet, comment this line out or create the asset.
 
 ; Minimum Windows version: Windows 10 (build 10240)
 MinVersion=10.0.10240
@@ -143,8 +145,10 @@ Filename: "{app}\{#MyAppExeName}"; \
 
 ; ── Pascal helper functions ──────────────────────────────────────────────────
 [Code]
-{ Returns True when the CLI dist directory was included in the build. }
+{ Returns True when the CLI bundle directory was included in the build.
+  Checks the inner bundle folder (DanCLI\DanCLI) rather than the distpath
+  container (DanCLI) which always exists after any build attempt. }
 function CliDistDirExists: Boolean;
 begin
-  Result := DirExists(ExpandConstant('{src}\..\dist\windows\DanCLI'));
+  Result := DirExists(ExpandConstant('{src}\..\dist\windows\DanCLI\DanCLI'));
 end;

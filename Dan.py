@@ -28,7 +28,16 @@ from agent import run_agent_loop, AgentInterrupted
 from tools import register_core_tools
 from knowledge import register_knowledge_tools
 from web import register_web_tools
-from workers import register_worker_tools, get_pool
+from workers import (
+    approve_worker,
+    cancel_worker,
+    configure_worker_runner,
+    deny_worker,
+    get_pool,
+    inspect_worker,
+    list_workers,
+    register_worker_tools,
+)
 from actions import register_action_tools, get_action, get_all_actions
 from skills import register_skill_tools
 from code_tools import register_code_tools
@@ -317,13 +326,32 @@ def handle_slash_command(cmd: str, messages: list[dict], provider: object) -> st
         return "\n".join(f"  [{e.scope}] {e.name}: {e.content[:80]}" for e in entries)
 
     elif command == "/workers" or command == "/agents":
-        tasks = get_pool().list_tasks()
-        if not tasks:
-            return "No workers."
-        lines = []
-        for t in tasks:
-            lines.append(f"  {t.id}  {t.status:8s}  {t.prompt[:60]}")
-        return "\n".join(lines)
+        return list_workers()
+
+    elif command == "/agent":
+        if not arg:
+            return (
+                "Agent commands:\n"
+                "  /agent inspect <id>\n"
+                "  /agent approve <id>\n"
+                "  /agent deny <id> [reason]\n"
+                "  /agent cancel <id>"
+            )
+        subparts = arg.split(maxsplit=2)
+        subcmd = subparts[0].lower()
+        agent_id = subparts[1] if len(subparts) > 1 else ""
+        extra = subparts[2] if len(subparts) > 2 else ""
+        if not agent_id:
+            return "Usage: /agent <inspect|approve|deny|cancel> <id>"
+        if subcmd == "inspect":
+            return inspect_worker(agent_id)
+        if subcmd == "approve":
+            return approve_worker(agent_id)
+        if subcmd == "deny":
+            return deny_worker(agent_id, extra or "request denied")
+        if subcmd == "cancel":
+            return cancel_worker(agent_id)
+        return f"Unknown /agent subcommand: {subcmd}"
 
     elif command == "/project":
         sub = arg.strip().lower()
@@ -452,6 +480,8 @@ def _help_text() -> str:
   /actions               List automation actions
   /knowledge [query]     Show stored knowledge (or search by query)
   /workers               Show worker tasks
+  /agents                Alias for /workers
+  /agent ...             Inspect, approve, deny, or cancel a worker
   /config [key=val]      Show or set API config
   /provider [name]       Show or switch provider
   /models                List available models per provider
@@ -547,6 +577,13 @@ def repl(provider: object, model: str, provider_name: str):
     tool_count = init_tools()
     key_count = getattr(provider, "key_count", 1)
     supports_stream = getattr(provider, "supports_streaming", False)
+
+    def _worker_runner(prompt: str, worker_type: str, session_id: str) -> str:
+        worker_provider = get_provider(provider_name, model)
+        response, _ = run_agent_loop(prompt, [], worker_provider)
+        return response
+
+    configure_worker_runner(_worker_runner)
 
     # Initialise per-session cost tracker and session ID
     cost_tracker.init(model)
@@ -654,6 +691,17 @@ def repl(provider: object, model: str, provider_name: str):
 def one_shot(prompt: str, provider: object):
     """Run a single prompt and exit."""
     init_tools()
+    provider_name = getattr(provider, "provider_name", "") or provider.__class__.__name__.replace(
+        "Provider", ""
+    ).lower()
+    model = getattr(provider, "model", "")
+
+    def _worker_runner(prompt: str, worker_type: str, session_id: str) -> str:
+        worker_provider = get_provider(provider_name, model)
+        response, _ = run_agent_loop(prompt, [], worker_provider)
+        return response
+
+    configure_worker_runner(_worker_runner)
     messages: list[dict] = []
     response, _ = run_agent_loop(prompt, messages, provider)
     print(response)

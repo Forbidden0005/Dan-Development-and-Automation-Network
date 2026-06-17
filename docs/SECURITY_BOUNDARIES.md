@@ -15,7 +15,7 @@ This is a trust-by-default model for the local user's own environment, not a san
 ## Path Validation
 
 **Implemented in:** `security_utils.SecurePathValidator`  
-**Used by:** `tools_secure.py` for all file read/write/search operations
+**Used by:** `tools.py` for all file read/write/search operations
 
 All file paths provided to tools are:
 
@@ -34,7 +34,7 @@ The allowed roots default to `Path.cwd()` at startup. This is appropriate for th
 ## Command Execution
 
 **Implemented in:** `security_utils.SecureCommandExecutor`  
-**Used by:** `tools_secure.py` for the shell tool
+**Used by:** `tools.py` for the shell tool
 
 Command execution is controlled by two mechanisms applied in order:
 
@@ -55,7 +55,22 @@ The allowlist includes:
 - **Archives:** `tar`, `zip`, `unzip`
 - **Network (limited):** `ping`, `curl`, `wget`, `nslookup`
 
-**Known limitation:** `powershell` and `cmd` are in the allowlist, which means the allowlist is not a hard sandbox — a user could ask Dan to run `powershell -Command "rm -rf /"`. The allowlist is a first-pass safety gate for LLM-generated commands, not a security boundary against deliberate user abuse. The user is running Dan with their own credentials on their own machine.
+**Known limitation:** The allowlist is a first-pass safety gate for LLM-generated commands, not a security boundary against deliberate user abuse. The user is running Dan with their own credentials on their own machine.
+
+### 2a. Restricted command positive-allowlist (steward pass 17)
+
+Some commands in `SAFE_COMMANDS` require a specific invocation flag to be present. These are defined in `RESTRICTED_COMMAND_REQUIREMENTS` (also in `SecureCommandExecutor`) and compiled into `self.compiled_requirements` at init time.
+
+After the `SAFE_COMMANDS` check passes, `validate_command` additionally checks whether the full command string matches the required pattern. If the pattern is absent, the invocation is rejected even though the base command is whitelisted.
+
+Currently restricted:
+
+| Command | Required pattern | Rationale |
+|---|---|---|
+| `powershell` / `powershell.exe` | `-File` must be present | Only legitimate use in the codebase is `powershell -File <path>` (see `code_execution.py`). Without this constraint, any undocumented PowerShell flag not enumerated in `DANGEROUS_PATTERNS` would be silently permitted. |
+| `pwsh` / `pwsh.exe` | `-File` must be present | PowerShell 7+ equivalent; same constraint applies. |
+
+`cmd` is not in `RESTRICTED_COMMAND_REQUIREMENTS` because its dangerous invocation forms (`/c`, `/k`) are already fully covered by `DANGEROUS_PATTERNS`.
 
 ### 3. Dangerous pattern blocking
 
@@ -64,7 +79,14 @@ A set of regex patterns blocks known-dangerous constructs regardless of the allo
 - Privilege escalation: `sudo`, `su root`, `chmod 777`
 - Fork bombs, infinite loops
 - `export PATH=`, `unset PATH`
-- etc.
+- Shell interpreter bypass vectors blocked explicitly (steward passes 15–16):
+  - `cmd /c` and `cmd /C` — arbitrary string execution via cmd
+  - `cmd /k` and `cmd /K` — interactive shell session opener
+  - `powershell -Command`, `powershell -c`, `powershell -EncodedCommand`, `powershell -enc` — arbitrary PS string execution
+  - `pwsh` equivalents for all of the above
+  - `powershell -ExecutionPolicy Bypass/Unrestricted` (and `-ExecP`, `-EP` abbreviations) — execution policy override
+  - `wmic process call create` — WMI process spawning (Living-off-the-Land bypass)
+- `powershell -File` and `cmd` without shell-execution flags remain permitted (used by `code_execution.py` and Windows built-ins)
 
 ---
 
@@ -179,6 +201,5 @@ The log is append-only plain text. To rotate it, rename or move the file. Write 
 
 ## Known Gaps
 
-- The command allowlist permits `powershell` and `cmd`, which can bypass other restrictions if invoked deliberately.
 - The audit log records parameter names but not values — full forensic replay of tool calls is not possible from the log alone. This is intentional (values may be sensitive) but means the log is a detection aid, not a complete audit trail.
 - The confirmation gate is opt-in and off by default — autonomous or unattended sessions do not prompt before Level 3 tool execution unless the gate is explicitly installed.

@@ -122,6 +122,30 @@ class SecureCommandExecutor:
         r">\s*/dev/null\s*2>&1.*&",  # background processes
         r"\bexport\s+PATH=",
         r"\bunset\s+PATH",
+        # Shell interpreter bypass vectors.
+        # `cmd /c` and `powershell -Command/-c/-EncodedCommand` accept arbitrary
+        # command strings and can sidestep every other restriction in this list.
+        # We block the shell-execution flags explicitly while leaving the legitimate
+        # interpreter invocations (e.g. `powershell -File script.ps1`, used by
+        # code_execution.py, and bare `cmd` for Windows built-ins) intact.
+        r"\bcmd(?:\.exe)?\b.*\s/[Cc]\b",
+        r"\bpowershell(?:\.exe)?\b.*\s-[Cc](?:ommand)?\b",
+        r"\bpowershell(?:\.exe)?\b.*\s-[Ee](?:nc|ncoded[Cc]ommand)\b",
+        r"\bpwsh(?:\.exe)?\b.*\s-[Cc](?:ommand)?\b",
+        r"\bpwsh(?:\.exe)?\b.*\s-[Ee](?:nc|ncoded[Cc]ommand)\b",
+        # `cmd /k` opens an interactive interpreter session, which is functionally
+        # equivalent to an unconstrained shell — any command can be typed or piped in.
+        r"\bcmd(?:\.exe)?\b.*\s/[Kk]\b",
+        # `wmic process call create` is a Windows Living-off-the-Land technique that
+        # spawns an arbitrary process via WMI, bypassing command-name validation entirely.
+        # Benign wmic queries (e.g. `wmic cpu get name`) do not match this pattern.
+        r"\bwmic\b.*\bprocess\b.*\bcall\b.*\bcreate\b",
+        # `powershell -ExecutionPolicy Bypass/Unrestricted` (and common abbreviations
+        # -ExecP, -EP) overrides the system execution policy and is a standard first
+        # step in malicious PowerShell chains.  Legitimate code_execution.py paths use
+        # `-File` only and never need to override the execution policy.
+        r"\bpowershell(?:\.exe)?\b.*\s-(?:ExecutionPolicy|ExecP|EP)\s+(?:bypass|unrestricted)\b",
+        r"\bpwsh(?:\.exe)?\b.*\s-(?:ExecutionPolicy|ExecP|EP)\s+(?:bypass|unrestricted)\b",
     ]
 
     # Allowed safe commands (whitelist approach for maximum security)
@@ -268,6 +292,26 @@ class SecureCommandExecutor:
         "cls",
     }
 
+    # Positive-allowlist requirements for commands that are in SAFE_COMMANDS but
+    # must be invoked with a specific flag to be safe.  A command listed here
+    # passes the SAFE_COMMANDS allowlist check only when the full command string
+    # ALSO matches the associated pattern.  Invocations that omit the required
+    # flag are rejected, even though the base command is whitelisted.
+    #
+    # Rationale: `powershell` and `pwsh` are in SAFE_COMMANDS because
+    # code_execution.py legitimately invokes them with `-File`.  Without this
+    # positive-allowlist check, any PowerShell flag not enumerated in
+    # DANGEROUS_PATTERNS would be silently permitted — including unknown or
+    # future flags that open an unconstrained shell.  Requiring `-File` to be
+    # present closes that gap: the only legitimate use case in the codebase is
+    # `powershell -File <path>`, so nothing valid is lost.
+    RESTRICTED_COMMAND_REQUIREMENTS: dict[str, str] = {
+        # PowerShell core — must be invoked with -File
+        "powershell": r"-[Ff]ile\b",
+        # PowerShell 7+ cross-platform — same constraint
+        "pwsh": r"-[Ff]ile\b",
+    }
+
     def __init__(self, use_whitelist: bool = True, max_execution_time: int = 30):
         """
         Initialize secure command executor.
@@ -281,10 +325,24 @@ class SecureCommandExecutor:
         self.compiled_patterns = [
             re.compile(pattern, re.IGNORECASE) for pattern in self.DANGEROUS_PATTERNS
         ]
+        # Compile the positive-allowlist requirement patterns.
+        self.compiled_requirements: dict[str, re.Pattern] = {
+            cmd: re.compile(pattern, re.IGNORECASE)
+            for cmd, pattern in self.RESTRICTED_COMMAND_REQUIREMENTS.items()
+        }
 
     def validate_command(self, command: str) -> None:
         """
         Validate a command for security risks.
+
+        Two-stage check:
+        1. DANGEROUS_PATTERNS — block known-bad flag combinations regardless of
+           which command is being invoked.
+        2. SAFE_COMMANDS allowlist — reject any base command not in the set.
+           For commands also listed in RESTRICTED_COMMAND_REQUIREMENTS, the full
+           command string must additionally match the required pattern; invocations
+           that omit the required flag are rejected even though the base command
+           is whitelisted.
 
         Args:
             command: Command string to validate
@@ -312,17 +370,80 @@ class SecureCommandExecutor:
                 parsed = self._split_command(command)
                 if parsed:
                     base_command = parsed[0].split("/")[-1].split("\\")[-1]  # strip path
-                    # Strip .exe/.cmd/.bat extension on Windows
+                    # Resolve canonical name: strip .exe/.cmd/.bat extension on Windows
+                    # so that `powershell.exe` maps to `powershell` for both the
+                    # SAFE_COMMANDS check and the RESTRICTED_COMMAND_REQUIREMENTS check.
+                    canonical = base_command
                     if "." in base_command:
                         base_no_ext = base_command.rsplit(".", 1)[0]
                         if base_no_ext in self.SAFE_COMMANDS:
-                            return
-                    if base_command not in self.SAFE_COMMANDS:
-                        raise ValueError(f"Command '{base_command}' not in whitelist")
+                            canonical = base_no_ext
+                    if canonical not in self.SAFE_COMMANDS:
+                        raise ValueError(f"Command '{canonical}' not in whitelist")
+                    # Apply positive-allowlist requirement for restricted commands.
+                    # If the canonical name appears in RESTRICTED_COMMAND_REQUIREMENTS,
+                    # the full command string must match the associated pattern.
+                    # This prevents bare or unrecognised-flag invocations of commands
+                    # like `powershell` that are safe only in a specific invocation form.
+                    if canonical in self.compiled_requirements:
+                        req_pattern = self.compiled_requirements[canonical]
+                        if not req_pattern.search(command):
+                            raise ValueError(
+                                f"Command '{canonical}' requires a specific invocation "
+                                f"pattern (e.g. -File for PowerShell); bare or "
+                                f"unrecognised-flag invocations are not permitted"
+                            )
+                    self._request_subagent_approval_if_destructive(canonical, parsed)
             except ValueError as e:
-                if "not in whitelist" in str(e):
+                if "not in whitelist" in str(e) or "requires a specific invocation" in str(e):
                     raise
                 raise ValueError(f"Failed to parse command safely: {e}")
+
+    def _request_subagent_approval_if_destructive(
+        self,
+        canonical: str,
+        parsed: list[str],
+    ) -> None:
+        """Request approval for destructive sub-agent shell commands."""
+        try:
+            from workers import request_destructive_approval
+        except ImportError:
+            return
+
+        if not parsed:
+            return
+
+        action = ""
+        paths: list[str] = []
+        reason = ""
+
+        if canonical in {"del", "rm", "rmdir"}:
+            action = canonical
+            paths = [part for part in parsed[1:] if not part.startswith("-") and not part.startswith("/")]
+            reason = "sub-agent delete command requires approval"
+        elif canonical in {"move", "mv", "ren"}:
+            action = canonical
+            paths = [part for part in parsed[1:] if not part.startswith("-") and not part.startswith("/")]
+            reason = "sub-agent rename or move command requires approval"
+        elif canonical == "pip" and len(parsed) >= 2 and parsed[1].lower() == "uninstall":
+            action = "pip uninstall"
+            paths = [part for part in parsed[2:] if not part.startswith("-")]
+            reason = "sub-agent package uninstall requires approval"
+        elif canonical == "npm" and len(parsed) >= 2 and parsed[1].lower() == "uninstall":
+            action = "npm uninstall"
+            paths = [part for part in parsed[2:] if not part.startswith("-")]
+            reason = "sub-agent package uninstall requires approval"
+        elif canonical == "pnpm" and len(parsed) >= 2 and parsed[1].lower() in {"remove", "rm"}:
+            action = f"pnpm {parsed[1].lower()}"
+            paths = [part for part in parsed[2:] if not part.startswith("-")]
+            reason = "sub-agent package removal requires approval"
+        elif canonical == "yarn" and len(parsed) >= 2 and parsed[1].lower() in {"remove", "uninstall"}:
+            action = f"yarn {parsed[1].lower()}"
+            paths = [part for part in parsed[2:] if not part.startswith("-")]
+            reason = "sub-agent package removal requires approval"
+
+        if action:
+            request_destructive_approval(action, reason, paths or [parsed[0]])
 
     def execute_command(self, command: str, cwd: Optional[str] = None) -> str:
         """

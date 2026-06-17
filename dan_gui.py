@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Dan GUI — Deep-space dark theme · all features."""
+"""Dan GUI — Deep-space dark theme · all features.
+
+.. deprecated::
+    This module is the legacy GUI shell and is no longer imported by any
+    production path.  ``dan_gui_modern.py`` is the supported desktop entry
+    point.  Controller logic previously shared through class inheritance has
+    been extracted into ``dan_gui_controller.DanControllerMixin``.
+
+    Caller audit (2026-06-08 steward pass 14): no Python file outside this
+    module imports ``dan_gui`` or ``DanGUI``.  The launch scripts
+    (``run_gui.bat``, ``run_gui.sh``) invoke ``dan_gui_modern.py`` directly.
+
+    This file is ready for deletion pending explicit user approval (Destructive
+    Action Gate).  It is kept in-tree until that approval is given to preserve
+    the option of a lightweight fallback shell.
+"""
 
 import sys
 import threading

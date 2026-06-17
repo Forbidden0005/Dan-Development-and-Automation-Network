@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import threading
+import tkinter as tk
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1076,6 +1077,83 @@ class TestSecurityUtilsMore:
 
         assert "local network address" in tools.http_request("https://example.com/redirect")
 
+    def test_validate_fetch_url_blocks_non_http_schemes(self):
+        from security_utils import validate_fetch_url
+
+        with pytest.raises(ValueError, match="scheme"):
+            validate_fetch_url("file:///etc/passwd")
+        with pytest.raises(ValueError, match="scheme"):
+            validate_fetch_url("ftp://example.com/file.txt")
+        with pytest.raises(ValueError, match="scheme"):
+            validate_fetch_url("javascript:alert(1)")
+
+    def test_validate_fetch_url_blocks_empty_and_non_string(self):
+        from security_utils import validate_fetch_url
+
+        with pytest.raises(ValueError, match="non-empty"):
+            validate_fetch_url("")
+        with pytest.raises(ValueError, match="non-empty"):
+            validate_fetch_url("   ")
+
+    def test_validate_fetch_url_blocks_loopback_and_private_addresses(self):
+        """Verify SSRF protection rejects all local/private network targets."""
+        from security_utils import validate_fetch_url
+
+        blocked = [
+            "http://localhost/admin",
+            "http://127.0.0.1:8080/secret",
+            "http://192.168.1.1/router",
+            "http://10.0.0.1/internal",
+            "http://172.16.0.1/private",
+            "http://169.254.169.254/latest/meta-data/",  # cloud metadata endpoint
+            "http://0.0.0.0/",
+        ]
+        for url in blocked:
+            with pytest.raises(ValueError, match="local network address"):
+                validate_fetch_url(url)
+
+    def test_validate_fetch_url_allows_public_https_urls(self):
+        from security_utils import validate_fetch_url
+
+        result = validate_fetch_url("https://example.com/page")
+        assert result == "https://example.com/page"
+
+        # Leading/trailing whitespace is stripped
+        result = validate_fetch_url("  http://api.example.org/v1/data  ")
+        assert result == "http://api.example.org/v1/data"
+
+    def test_validate_fetch_url_permits_local_when_explicitly_allowed(self):
+        from security_utils import validate_fetch_url
+
+        result = validate_fetch_url("http://localhost:8080/dev", allow_local=True)
+        assert "localhost" in result
+
+    def test_validate_redirect_url_blocks_ssrf_via_absolute_redirect_to_private(self):
+        from security_utils import validate_redirect_url
+
+        with pytest.raises(ValueError, match="local network address"):
+            validate_redirect_url("https://example.com", "http://127.0.0.1/secret")
+        with pytest.raises(ValueError, match="local network address"):
+            validate_redirect_url("https://example.com", "http://169.254.169.254/meta-data")
+
+    def test_validate_redirect_url_allows_valid_absolute_redirect(self):
+        from security_utils import validate_redirect_url
+
+        result = validate_redirect_url(
+            "https://example.com/page1",
+            "https://example.com/page2",
+        )
+        assert result == "https://example.com/page2"
+
+    def test_validate_redirect_url_resolves_relative_path_against_base(self):
+        from security_utils import validate_redirect_url
+
+        result = validate_redirect_url(
+            "https://example.com/v1/resource",
+            "/v2/resource",
+        )
+        assert result == "https://example.com/v2/resource"
+
 
 class TestCoreToolsMore:
     def test_backup_and_diff_helpers(self, tmp_path):
@@ -1151,66 +1229,65 @@ class TestCoreToolsMore:
 
 class TestSecureTools:
     def test_secure_glob_and_grep_behaviors(self, monkeypatch, tmp_path):
-        import tools_secure
+        import tools
 
         monkeypatch.setattr(
-            tools_secure,
+            tools,
             "_path_validator",
-            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+            tools.SecurePathValidator(allowed_roots=[str(tmp_path)]),
         )
         root = tmp_path / "proj"
         root.mkdir()
         (root / "a.py").write_text("print('hello')\nvalue = 1\n", encoding="utf-8")
         (root / "b.txt").write_text("other\n", encoding="utf-8")
 
-        globbed = tools_secure.glob_files("*.py", str(root))
-        grepped = tools_secure.grep_files("value", str(root), "*.py")
+        globbed = tools.glob_files("*.py", str(root))
+        grepped = tools.grep_files("value", str(root), "*.py")
 
         assert "a.py" in globbed
         assert "a.py:2" in grepped
 
     def test_secure_list_directory_and_register(self, monkeypatch, tmp_path):
-        import tools_secure
+        import tools
 
         monkeypatch.setattr(
-            tools_secure,
+            tools,
             "_path_validator",
-            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+            tools.SecurePathValidator(allowed_roots=[str(tmp_path)]),
         )
         root = tmp_path / "proj"
         (root / "sub").mkdir(parents=True)
         (root / "sub" / "file.txt").write_text("x", encoding="utf-8")
 
-        listing = tools_secure.list_directory(str(root))
+        listing = tools.list_directory(str(root))
         assert "proj/" in listing
         assert "file.txt" in listing
 
         registered = []
         monkeypatch.setattr(
-            tools_secure.registry,
+            tools.registry,
             "register_tool",
             lambda **kwargs: registered.append(kwargs["name"]),
         )
-        tools_secure.register_secure_core_tools()
+        tools.register_core_tools()
 
         assert {"Read", "Write", "Edit", "Bash", "Glob", "Grep", "ListDir"}.issubset(
             set(registered)
         )
 
-    def test_register_secure_core_tools_assigns_correct_safety_levels(self, monkeypatch):
-        """Verify that secure-core tool registrations carry the expected safety levels.
+    def test_register_core_tools_assigns_correct_safety_levels(self, monkeypatch):
+        """Verify that core tool registrations in tools.py carry the expected safety levels.
 
-        Mirrors test_register_core_tools_assigns_correct_safety_levels for tools.py.
         The confirmation gate fires for Level 3; write-side tools must be Level 2;
         read-only tools must be Level 1.  Also verifies the parameters dict is a
         proper JSON Schema object (not a flat property map) so to_api_schema() would
         produce a valid Anthropic input_schema.
         """
-        import tools_secure
+        import tools
 
         recorded: dict[str, dict] = {}
         monkeypatch.setattr(
-            tools_secure.registry,
+            tools.registry,
             "register_tool",
             lambda **kwargs: recorded.__setitem__(
                 kwargs["name"],
@@ -1218,7 +1295,7 @@ class TestSecureTools:
             ),
         )
 
-        tools_secure.register_secure_core_tools()
+        tools.register_core_tools()
 
         # Level 3 — elevated execution; must fire the confirmation gate
         assert recorded["Bash"]["safety_level"] == 3, "Bash must be Level 3"
@@ -2223,6 +2300,28 @@ class TestWorkersMore:
         assert task.worker_type == "research"
         assert task.status == "error"
 
+    def test_handle_slash_command_agent_inspect_and_approval(self, monkeypatch):
+        import Dan
+        from workers import get_manager
+
+        manager = get_manager()
+        session = manager.create_session("review patch", worker_type="review")
+        manager.request_approval(
+            session.id,
+            action="delete",
+            reason="cleanup",
+            paths=["C:/demo/old.py"],
+        )
+
+        inspect = Dan.handle_slash_command(f"/agent inspect {session.id}", [], object())
+        approved = Dan.handle_slash_command(f"/agent approve {session.id}", [], object())
+        denied = Dan.handle_slash_command(f"/agent deny {session.id}", [], object())
+
+        assert session.id in inspect
+        assert "blocked_approval" in inspect
+        assert "Approved" in approved
+        assert "No pending approval" in denied
+
 
 class TestProjectIndexer:
     def test_scan_extracts_project_symbols(self, tmp_path):
@@ -2767,6 +2866,166 @@ class TestSecurityUtils:
         assert recorded["args"][:4] == ["C:\\Windows\\System32\\cmd.exe", "/d", "/s", "/c"]
         assert recorded["kwargs"].get("shell") is not True
 
+    def test_validate_command_blocks_cmd_shell_bypass(self):
+        """cmd /c allows arbitrary string execution — must be blocked."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        for cmd in [
+            'cmd /c "del /f /q important.txt"',
+            "cmd /C powershell",
+            "cmd.exe /c echo hi",
+        ]:
+            with pytest.raises(ValueError, match=r"Blocked dangerous command pattern"):
+                executor.validate_command(cmd)
+
+    def test_validate_command_blocks_powershell_execution_bypass(self):
+        """powershell -Command/-c/-EncodedCommand bypass the allowlist — must be blocked."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        for cmd in [
+            'powershell -Command "Remove-Item -Recurse C:\\Windows"',
+            "powershell -c bad_stuff",
+            "powershell -EncodedCommand dABlAHMAdAA=",
+            "powershell -enc dABlAHMAdAA=",
+            "powershell.exe -Command whoami",
+            "pwsh -Command bad",
+            "pwsh -c bad",
+            "pwsh -EncodedCommand dABlAHMAdAA=",
+            "pwsh -enc dABlAHMAdAA=",
+        ]:
+            with pytest.raises(ValueError, match=r"Blocked dangerous command pattern"):
+                executor.validate_command(cmd)
+
+    def test_validate_command_allows_powershell_file(self):
+        """powershell -File is the legitimate path used by code_execution.py — must not be blocked."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        # Should NOT raise — -File is safe; it runs a named script, not an arbitrary string
+        executor.validate_command("powershell -File script.ps1")
+        executor.validate_command("powershell -NonInteractive -NoProfile -File build.ps1")
+
+    def test_validate_command_blocks_cmd_interactive_shell(self):
+        """cmd /k opens an interactive shell — equivalent to unconstrained execution."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        for cmd in [
+            "cmd /k",
+            "cmd /K whoami",
+            'cmd.exe /k "start malware.exe"',
+        ]:
+            with pytest.raises(ValueError, match=r"Blocked dangerous command pattern"):
+                executor.validate_command(cmd)
+
+    def test_validate_command_blocks_wmic_process_creation(self):
+        """wmic process call create is a LotL technique for arbitrary process execution."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        for cmd in [
+            'wmic process call create "calc.exe"',
+            "wmic process call create malware.exe",
+            "WMIC PROCESS CALL CREATE notepad",
+        ]:
+            with pytest.raises(ValueError, match=r"Blocked dangerous command pattern"):
+                executor.validate_command(cmd)
+
+    def test_validate_command_allows_benign_wmic(self):
+        """Benign wmic info queries must not be blocked."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        # These do not match the 'process call create' pattern — should not raise
+        executor.validate_command("wmic cpu get name")
+        executor.validate_command("wmic os get Caption")
+
+    def test_validate_command_blocks_powershell_execution_policy_bypass(self):
+        """powershell -ExecutionPolicy Bypass/Unrestricted overrides system policy — must be blocked."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        for cmd in [
+            "powershell -ExecutionPolicy Bypass -File run.ps1",
+            "powershell -ExecutionPolicy Unrestricted -File run.ps1",
+            "powershell -ExecP Bypass -File run.ps1",
+            "powershell -EP bypass -File run.ps1",
+            "pwsh -ExecutionPolicy Bypass -File run.ps1",
+            "pwsh -EP unrestricted -File run.ps1",
+        ]:
+            with pytest.raises(ValueError, match=r"Blocked dangerous command pattern"):
+                executor.validate_command(cmd)
+
+    def test_validate_command_allows_powershell_without_bypass(self):
+        """powershell -File without an execution policy override must not be blocked."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        # These are the forms legitimately used by code_execution.py
+        executor.validate_command("powershell -File script.ps1")
+        executor.validate_command("powershell -NonInteractive -NoProfile -File build.ps1")
+        # -ExecutionPolicy with a restrictive policy is benign
+        executor.validate_command("powershell -ExecutionPolicy RemoteSigned -File deploy.ps1")
+
+    def test_validate_command_blocks_bare_powershell(self):
+        """Bare `powershell` (no flags) opens an interactive shell — must be blocked.
+
+        RESTRICTED_COMMAND_REQUIREMENTS requires -File to be present for every
+        powershell invocation; without it the invocation is rejected even though
+        'powershell' is in SAFE_COMMANDS.
+        """
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        for cmd in [
+            "powershell",
+            "powershell.exe",
+            "pwsh",
+            "pwsh.exe",
+        ]:
+            with pytest.raises(ValueError, match="requires a specific invocation"):
+                executor.validate_command(cmd)
+
+    def test_validate_command_blocks_powershell_without_file_flag(self):
+        """powershell with flags but without -File must be blocked.
+
+        Flags like -NonInteractive or -NoProfile alone do not indicate a safe
+        invocation — -File must be present to confirm a script-only execution path.
+        """
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        for cmd in [
+            "powershell -NonInteractive",
+            "powershell -NoProfile",
+            "powershell -NonInteractive -NoProfile",
+            "powershell.exe -NonInteractive -NoProfile",
+            "pwsh -NonInteractive",
+            "pwsh -NoProfile",
+            "pwsh.exe -NoProfile",
+        ]:
+            with pytest.raises(ValueError, match="requires a specific invocation"):
+                executor.validate_command(cmd)
+
+    def test_validate_command_allows_pwsh_file(self):
+        """pwsh -File is the PowerShell 7+ equivalent of powershell -File — must be allowed."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        executor.validate_command("pwsh -File script.ps1")
+        executor.validate_command("pwsh -NonInteractive -NoProfile -File build.ps1")
+        executor.validate_command("pwsh.exe -File deploy.ps1")
+
+    def test_validate_command_allows_powershell_exe_with_file(self):
+        """powershell.exe -File must be allowed (canonical .exe extension form)."""
+        from security_utils import SecureCommandExecutor
+
+        executor = SecureCommandExecutor()
+        executor.validate_command("powershell.exe -File script.ps1")
+        executor.validate_command("powershell.exe -NonInteractive -NoProfile -File build.ps1")
+
 
 class TestAuthToolsBundle:
     def test_login_user_authenticates_without_existing_session(self, monkeypatch):
@@ -3212,18 +3471,18 @@ class TestCodeToolsDependencyAudit:
 
 class TestSecureToolsExpanded:
     def test_secure_read_write_edit_and_async_paths(self, monkeypatch, tmp_path):
-        import tools_secure
+        import tools
 
         monkeypatch.setattr(
-            tools_secure,
+            tools,
             "_path_validator",
-            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+            tools.SecurePathValidator(allowed_roots=[str(tmp_path)]),
         )
         file_path = tmp_path / "demo.txt"
 
-        write_result = tools_secure.write_file(str(file_path), "alpha\nbeta")
-        read_result = tools_secure.read_file(str(file_path), offset=1, limit=1)
-        edit_result = tools_secure.edit_file(str(file_path), "beta", "gamma")
+        write_result = tools.write_file(str(file_path), "alpha\nbeta")
+        read_result = tools.read_file(str(file_path), offset=1, limit=1)
+        edit_result = tools.edit_file(str(file_path), "beta", "gamma")
 
         class AsyncOpen:
             async def __aenter__(self):
@@ -3235,8 +3494,8 @@ class TestSecureToolsExpanded:
             async def read(self):
                 return "one\ntwo\nthree"
 
-        monkeypatch.setattr(tools_secure.aiofiles, "open", lambda *args, **kwargs: AsyncOpen())
-        async_result = asyncio.run(tools_secure.read_file_async(str(file_path), offset=1, limit=1))
+        monkeypatch.setattr(tools._aiofiles, "open", lambda *args, **kwargs: AsyncOpen())
+        async_result = asyncio.run(tools.read_file_async(str(file_path), offset=1, limit=1))
 
         assert "Wrote" in write_result
         assert "2 | beta" in read_result
@@ -3244,19 +3503,19 @@ class TestSecureToolsExpanded:
         assert "2 | two" in async_result
 
     def test_secure_write_and_edit_preserve_exact_content(self, monkeypatch, tmp_path):
-        import tools_secure
+        import tools
 
         monkeypatch.setattr(
-            tools_secure,
+            tools,
             "_path_validator",
-            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+            tools.SecurePathValidator(allowed_roots=[str(tmp_path)]),
         )
         file_path = tmp_path / "exact.txt"
         content = "\n  leading whitespace\n\n\nTARGET\ntrailing whitespace  \n"
         replacement = "  beta\n\n\ngamma  \n"
 
-        write_result = tools_secure.write_file(str(file_path), content)
-        edit_result = tools_secure.edit_file(str(file_path), "TARGET", replacement)
+        write_result = tools.write_file(str(file_path), content)
+        edit_result = tools.edit_file(str(file_path), "TARGET", replacement)
         expected = "\n  leading whitespace\n\n\n" f"{replacement}" "\n" "trailing whitespace  \n"
 
         assert "Wrote" in write_result
@@ -3264,12 +3523,12 @@ class TestSecureToolsExpanded:
         assert file_path.read_text(encoding="utf-8") == expected
 
     def test_secure_search_listing_and_bash_edge_cases(self, monkeypatch, tmp_path):
-        import tools_secure
+        import tools
 
         monkeypatch.setattr(
-            tools_secure,
+            tools,
             "_path_validator",
-            tools_secure.SecurePathValidator(allowed_roots=[str(tmp_path)]),
+            tools.SecurePathValidator(allowed_roots=[str(tmp_path)]),
         )
         root = tmp_path / "proj"
         root.mkdir()
@@ -3277,25 +3536,25 @@ class TestSecureToolsExpanded:
         (root / "nested" / "a.py").write_text("value = 1\n", encoding="utf-8")
         (root / "b.txt").write_text("hello\n", encoding="utf-8")
 
-        no_glob = tools_secure.glob_files("*.md", str(root))
-        bad_regex = tools_secure.grep_files("[", str(root))
-        listing = tools_secure.list_directory(str(root))
+        no_glob = tools.glob_files("*.md", str(root))
+        bad_regex = tools.grep_files("[", str(root))
+        listing = tools.list_directory(str(root))
 
         captured = {}
 
         def fake_execute(command, cwd=None):
-            captured["timeout"] = tools_secure._command_executor.max_execution_time
+            captured["timeout"] = tools._command_executor.max_execution_time
             return "x" * 10050
 
-        monkeypatch.setattr(tools_secure._command_executor, "execute_command", fake_execute)
-        bash_result = tools_secure.run_bash("echo hello", timeout=7)
+        monkeypatch.setattr(tools._command_executor, "execute_command", fake_execute)
+        bash_result = tools.run_bash("echo hello", timeout=7)
 
         monkeypatch.setattr(
-            tools_secure._command_executor,
+            tools._command_executor,
             "execute_command",
             lambda command, cwd=None: (_ for _ in ()).throw(ValueError("blocked")),
         )
-        blocked = tools_secure.run_bash("echo nope")
+        blocked = tools.run_bash("echo nope")
 
         assert "No files matching" in no_glob
         assert "Invalid regex pattern" in bad_regex
@@ -3543,6 +3802,122 @@ class TestDanGuiComponentsExpanded:
         assert ("hello", "normal") in inserted
         assert "tool output" in lifted or "hello" in lifted
 
+    def test_live_bubble_fit_uses_wrapped_display_lines(self):
+        from dan_gui_components import LiveBubble
+
+        class FakeTkTextbox:
+            def count(self, start, end, mode):
+                assert start == "1.0"
+                assert end == "end-1c"
+                assert mode == "displaylines"
+                return (12,)
+
+        class FakeTextbox:
+            def __init__(self):
+                self._textbox = FakeTkTextbox()
+                self.height = None
+
+            def configure(self, **kwargs):
+                if "height" in kwargs:
+                    self.height = kwargs["height"]
+
+            def index(self, _value):
+                return "2.0"
+
+        bubble = LiveBubble.__new__(LiveBubble)
+        bubble.textbox = FakeTextbox()
+        bubble._textbox_widget = bubble.textbox._textbox
+
+        bubble._fit()
+
+        assert bubble.textbox.height == 280
+
+    def test_measure_textbox_height_falls_back_to_logical_lines(self):
+        from dan_gui_components import measure_textbox_height
+
+        class FakeTkTextbox:
+            def count(self, start, end, mode):
+                raise tk.TclError("display lines unavailable")
+
+        class FakeTextbox:
+            def __init__(self):
+                self._textbox = FakeTkTextbox()
+
+            def index(self, _value):
+                return "4.0"
+
+        height = measure_textbox_height(FakeTextbox(), minimum=50, line_height=22, padding=16)
+
+        assert height == 104
+
+    def test_measure_textbox_height_avoids_displayline_count_before_layout(self):
+        from dan_gui_components import measure_textbox_height
+
+        class FakeTkTextbox:
+            def count(self, start, end, mode):
+                assert start == "1.0"
+                assert end == "end-1c"
+                assert mode == "displaylines"
+                return (400,)
+
+        class FakeTextbox:
+            def __init__(self):
+                self._textbox = FakeTkTextbox()
+
+            def winfo_ismapped(self):
+                return 0
+
+            def winfo_width(self):
+                return 1
+
+            def index(self, _value):
+                return "3.0"
+
+        height = measure_textbox_height(FakeTextbox(), minimum=50, line_height=22, padding=16)
+
+        assert height == 82
+
+    def test_message_textbox_uses_wrapped_display_lines_without_height_cap(self):
+        import dan_gui_modern
+
+        created = []
+        original_textbox = dan_gui_modern.ctk.CTkTextbox
+
+        class FakeTkTextbox:
+            def count(self, start, end, mode):
+                assert start == "1.0"
+                assert end == "end-1c"
+                assert mode == "displaylines"
+                return (30,)
+
+        class FakeTextbox:
+            def __init__(self, *args, **kwargs):
+                self._textbox = FakeTkTextbox()
+                self.height = None
+                created.append(self)
+
+            def insert(self, *_args, **_kwargs):
+                return None
+
+            def configure(self, **kwargs):
+                if "height" in kwargs:
+                    self.height = kwargs["height"]
+
+            def index(self, _value):
+                return "3.0"
+
+        shell = dan_gui_modern.DanModernGUI.__new__(dan_gui_modern.DanModernGUI)
+        shell._font = lambda *_args, **_kwargs: None
+
+        try:
+            dan_gui_modern.ctk.CTkTextbox = FakeTextbox
+            textbox = shell._message_textbox(object(), "wrapped content", "#fff")
+        finally:
+            dan_gui_modern.ctk.CTkTextbox = original_textbox
+
+        assert textbox is created[0]
+        assert textbox.height == 676
+
 
 class TestDanGuiModern:
     def test_modern_gui_module_exports_shell(self):
@@ -3553,6 +3928,143 @@ class TestDanGuiModern:
         # It inherits from ctk.CTk + DanControllerMixin directly.
         assert issubclass(dan_gui_modern.DanModernGUI, DanControllerMixin)
         assert callable(dan_gui_modern.main)
+
+    def test_add_message_hides_welcome_on_first_user_message(self):
+        import dan_gui_modern
+
+        class FakeWelcome:
+            def __init__(self):
+                self.hidden = False
+
+            def grid(self):
+                self.hidden = False
+
+            def grid_remove(self):
+                self.hidden = True
+
+        calls = []
+        shell = dan_gui_modern.DanModernGUI.__new__(dan_gui_modern.DanModernGUI)
+        shell._welcome_frame = FakeWelcome()
+        shell._welcome_visible = True
+        shell._add_user_message = lambda content: calls.append(("user", content))
+        shell._add_assistant_message = lambda content: calls.append(("assistant", content))
+        shell._add_error_message = lambda content: calls.append(("error", content))
+        shell._scroll_to_bottom = lambda: calls.append(("scroll", None))
+
+        shell.add_message("user", "hello")
+
+        assert shell._welcome_visible is False
+        assert shell._welcome_frame.hidden is True
+        assert calls == [("user", "hello"), ("scroll", None)]
+
+    def test_new_chat_restores_welcome_before_assistant_seed_message(self):
+        import dan_gui_modern
+
+        class FakeWelcome:
+            def __init__(self):
+                self.hidden = True
+
+            def grid(self):
+                self.hidden = False
+
+            def grid_remove(self):
+                self.hidden = True
+
+        shell = dan_gui_modern.DanModernGUI.__new__(dan_gui_modern.DanModernGUI)
+        shell.is_processing = False
+        shell.messages = ["old"]
+        shell._welcome_frame = FakeWelcome()
+        shell._welcome_visible = False
+        shell._clear_chat = lambda: None
+        shell._update_tokens = lambda: None
+        shell.refresh_sidebar = lambda: None
+        sent = []
+        shell.add_message = lambda role, content: sent.append((role, content))
+
+        shell.new_chat()
+
+        assert shell._welcome_visible is True
+        assert shell._welcome_frame.hidden is False
+        assert sent
+        assert sent[0][0] == "assistant"
+
+    def test_load_history_hides_welcome_when_history_contains_user_message(self, monkeypatch, tmp_path):
+        import dan_gui_modern
+
+        class FakeWelcome:
+            def __init__(self):
+                self.hidden = False
+
+            def grid(self):
+                self.hidden = False
+
+            def grid_remove(self):
+                self.hidden = True
+
+        session_dir = tmp_path / "sessions"
+        session_dir.mkdir()
+        session_path = session_dir / "_auto_demo.json"
+        session_path.write_text(
+            json.dumps(
+                {
+                    "session_id": "demo",
+                    "messages": [
+                        {"role": "user", "content": "hello"},
+                        {"role": "assistant", "content": [{"type": "text", "text": "world"}]},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        shell = dan_gui_modern.DanModernGUI.__new__(dan_gui_modern.DanModernGUI)
+        shell._session_id = "seed"
+        shell._welcome_frame = FakeWelcome()
+        shell._welcome_visible = True
+        shell._render_messages = lambda messages: setattr(shell, "_rendered_messages", messages)
+        shell._update_tokens = lambda: None
+        monkeypatch.setattr(dan_gui_modern, "USER_DATA_DIR", tmp_path)
+
+        loaded = shell._load_history()
+
+        assert loaded is True
+        assert shell._welcome_visible is False
+        assert shell._welcome_frame.hidden is True
+
+    def test_workspace_agents_snapshot_uses_real_manager_state(self, monkeypatch):
+        import dan_gui_modern
+
+        manager = dan_gui_modern.get_manager()
+        session = manager.create_session("review patch", worker_type="review")
+        manager.claim_paths(session.id, [str(Path.cwd() / "demo.py")])
+
+        shell = dan_gui_modern.DanModernGUI.__new__(dan_gui_modern.DanModernGUI)
+        snapshot = shell._workspace_agents_snapshot()
+
+        assert session.id in snapshot
+        assert "review patch" in snapshot
+        assert "claims=1" in snapshot
+
+    def test_select_workspace_agents_populates_agents_body(self):
+        import dan_gui_modern
+
+        configured = {}
+
+        class FakeBody:
+            def configure(self, **kwargs):
+                configured.update(kwargs)
+
+        shell = dan_gui_modern.DanModernGUI.__new__(dan_gui_modern.DanModernGUI)
+        shell.ui = type("UI", (), {"selected": "#111"})()
+        shell._workspace_buttons = {"Agents": type("B", (), {"configure": lambda self, **kwargs: None})()}
+        shell._workspace_body = FakeBody()
+        shell._workspace_pane = "Files"
+        shell._workspace_agents_snapshot = lambda: "agent-1 running claims=2"
+
+        shell._select_workspace_pane("Agents")
+
+        assert shell._workspace_pane == "Agents"
+        assert "agent-1 running claims=2" in configured["text"]
 
 
 class TestGuiCompat:
