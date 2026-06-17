@@ -14,6 +14,8 @@ Dan uses **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
 
 Current version: **2.5.1**
 
+Latest published release: **[v2.5.1](https://github.com/Forbidden0005/Dan-Development-and-Automation-Network/releases/tag/v2.5.1)** (2026-06-17) — first published release; portable GUI + CLI Windows bundles, built and smoke-tested by the automated release workflow. No installer/signed binaries yet.
+
 ---
 
 ## Single Source of Truth

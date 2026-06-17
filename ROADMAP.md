@@ -39,6 +39,7 @@ Verified on 2026-06-08 (steward pass 5):
 - 2026-06-11: repaired CI — unpinned ruff (0.15.x) began flagging F821 on quoted `ToolAuditLog` annotations in `tool_registry.py` (fixed via `TYPE_CHECKING` import), and the windows-packaging job ran pytest without installing it (now installs `requirements-dev.txt`); full suite (232 tests) and packaging tests verified locally on ruff 0.15.16
 - 2026-06-16 ship-readiness pass: pre-release checklist re-verified green on this branch — `python -m pytest -q` passes (now **242 tests**, after adding the release-workflow guard test), `python -m ruff check .` clean, `python Dan.py --doctor --target cli` reports 0 blockers / 0 advisories, `python scripts/repo_health.py` passes (compileall over 58 files, tests, lint). `config.py` and `pyproject.toml` agree on version `2.5.1`. Only build-only gap: `pyinstaller` not installed in the dev shell (expected; needed only to produce binaries locally)
 - 2026-06-16: added tag-triggered release publishing (Phase 7.1) — `.github/workflows/release.yml` builds, verifies, smoke-tests, and uploads the portable GUI + CLI bundles as GitHub Release assets on `v*.*.*` tags. NOTE: the installer (`installer/Dan.iss`), icon asset (`assets/dan_icon.ico`), and code-signing support exist on the `codex/claude-inspired-ui` branch but have NOT been merged to this line; on this branch the release path is portable-artifacts-only, which is exactly Phase 7.1's scope
+- **2026-06-17: first published release — `v2.5.1` shipped.** Phase 7.1 PR merged to `main` (`62702e8`); tagging `v2.5.1` triggered the `Release` workflow, which completed successfully and published https://github.com/Forbidden0005/Dan-Development-and-Automation-Network/releases/tag/v2.5.1 with `Dan-2.5.1-windows-gui.zip` (33.14 MB) and `Dan-2.5.1-windows-cli.zip` (33.17 MB). Both bundles passed `verify_windows_build.py` and the packaged CLI smoke test in CI before publishing. The release is portable-only; the installer/signing path remains unmerged from `codex/claude-inspired-ui`
 
 ## Completed
 
@@ -237,6 +238,8 @@ Deferred:
 ## Phase 7 — Release Distribution (in progress)
 
 Goal: pushing a version tag produces a GitHub release with downloadable Windows artifacts (the portable GUI and CLI builds that `scripts/build_windows.py` produces today) without manual steps. A single signed installer `.exe` remains the long-term target, but it is gated on the deferred installer and code-signing work listed below and is NOT an exit criterion for this phase.
+
+Status: the core distribution goal is **met and proven** — `v2.5.1` shipped on 2026-06-17 (see Current State Snapshot). Items 7.2–7.5 below are separate operational-hardening tasks that remain open.
 
 Deferred-pending-approval items remain explicitly listed; this phase only executes the additive, low-risk pieces.
 
